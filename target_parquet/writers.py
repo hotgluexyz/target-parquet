@@ -1,18 +1,11 @@
 import datetime
+
 import pyarrow as pa
 import pyarrow.parquet as pq
 
-def get_date_string() -> str:
-    return (
-        datetime
-            .datetime
-            .now()
-            .isoformat()
-            [0:19]
-            .replace("-","")
-            .replace(":","")
-    )
 
+def get_date_string() -> str:
+    return datetime.datetime.now().isoformat()[0:19].replace("-", "").replace(":", "")
 
 
 class SingletonMeta(type):
@@ -26,15 +19,14 @@ class SingletonMeta(type):
 
 
 class Writers(metaclass=SingletonMeta):
-    _writers: dict[str, pq.ParquetWriter] = {}
+    _writers: dict = {}
 
     def start_writer(self, stream_name: str, schema: pa.Schema):
         if self.exist_writer(stream_name):
             return
 
         self._writers[stream_name] = pq.ParquetWriter(
-            f"{stream_name}-{get_date_string()}.parquet",
-            schema
+            f"{stream_name}-{get_date_string()}.parquet", schema
         )
 
     def close_all(self):
