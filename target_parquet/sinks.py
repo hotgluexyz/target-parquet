@@ -113,6 +113,8 @@ class ParquetSink(BatchSink):
 
         context["records"].append(record)
 
+        self.writers.update_job_metrics(self.stream_name)
+
     def process_batch(self, context: dict) -> None:
 
         try:
