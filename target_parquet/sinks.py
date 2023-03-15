@@ -35,7 +35,7 @@ def get_pyarrow_type(type_id: str, format=None):
 def build_pyarrow_field(key: str, value: dict):
     if "anyOf" in value:
         value = value["anyOf"][0]
-    types = value["type"]
+    types = value.get("type", ["string", "null"])
 
     is_nullable = any(i for i in ("null", "array", "object") if i in types)
 
