@@ -1,7 +1,7 @@
 import datetime
 import json
-import pathlib
 import os
+import pathlib
 
 import pyarrow as pa
 import pyarrow.parquet as pq
@@ -66,7 +66,9 @@ class Writers(metaclass=SingletonMeta):
             if not content.get("recordCount"):
                 content["recordCount"] = dict()
 
-            content["recordCount"][stream_name] = content["recordCount"].get(stream_name, 0) + 1
+            content["recordCount"][stream_name] = (
+                content["recordCount"].get(stream_name, 0) + 1
+            )
 
             f.seek(0)
             f.write(json.dumps(content))
