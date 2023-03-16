@@ -12,7 +12,7 @@ def multipleOf(validator, dB, instance, schema):
     if isinstance(dB, float):
         round_factor = int(abs(math.log10(dB)))
         quotient = instance / dB
-        failed = int(quotient) != round(quotient, round_factor)
+        failed = round(quotient) != round(quotient, round_factor)
     else:
         failed = instance % dB
 
