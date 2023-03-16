@@ -4,8 +4,10 @@ import json
 
 import pyarrow as pa
 from dateutil import parser as datetime_parser
+from jsonschema import FormatChecker
 from singer_sdk.sinks import BatchSink
 
+from target_parquet.validator import ParquetValidator
 from target_parquet.writers import Writers
 
 
@@ -42,7 +44,9 @@ def build_pyarrow_field(key: str, value: dict):
     if is_nullable:
         types = remove_null_string(types)
 
-    if len(types) == 1:
+    if isinstance(types, str):
+        type_id = types
+    elif len(types) == 1:
         type_id = types[0]
     elif "string" in types:
         type_id = "string"
@@ -93,6 +97,17 @@ class ParquetSink(BatchSink):
 
     max_size = 10000
 
+    def __init__(
+        self,
+        target,
+        stream_name,
+        schema,
+        key_properties,
+    ) -> None:
+        """Initialize target sink."""
+        super().__init__(target, stream_name, schema, key_properties)
+        self._validator = ParquetValidator(self.schema, format_checker=FormatChecker())
+
     def start_batch(self, context: dict) -> None:
         """Start a batch."""
         schema = pa.schema(
@@ -117,8 +132,5 @@ class ParquetSink(BatchSink):
 
     def process_batch(self, context: dict) -> None:
 
-        try:
-            table = pa.Table.from_pylist(context["records"], schema=context["schema"])
-        except:
-            context["records"]
+        table = pa.Table.from_pylist(context["records"], schema=context["schema"])
         self.writers.write(self.stream_name, table)
