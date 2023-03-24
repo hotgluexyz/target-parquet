@@ -9,6 +9,7 @@ from singer_sdk.sinks import BatchSink
 
 from target_parquet.validator import ParquetValidator
 from target_parquet.writers import Writers
+from singer_sdk.helpers._typing import DatetimeErrorTreatmentEnum
 
 
 def remove_null_string(array: list):
@@ -107,6 +108,10 @@ class ParquetSink(BatchSink):
         """Initialize target sink."""
         super().__init__(target, stream_name, schema, key_properties)
         self._validator = ParquetValidator(self.schema, format_checker=FormatChecker())
+
+    @property
+    def datetime_error_treatment(self) -> DatetimeErrorTreatmentEnum:
+        return DatetimeErrorTreatmentEnum.NULL
 
     def start_batch(self, context: dict) -> None:
         """Start a batch."""
