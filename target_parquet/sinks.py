@@ -107,7 +107,7 @@ class ParquetSink(BatchSink):
     ) -> None:
         """Initialize target sink."""
         super().__init__(target, stream_name, schema, key_properties)
-        self._validator = ParquetValidator(self.schema, format_checker=FormatChecker())
+        self._validator = ParquetValidator(self.schema, format_checker=None)
 
     @property
     def datetime_error_treatment(self) -> DatetimeErrorTreatmentEnum:
