@@ -49,6 +49,8 @@ def build_pyarrow_field(key: str, value: dict):
         type_id = types
     elif len(types) == 1:
         type_id = types[0]
+    elif "boolean" in types:
+        type_id = "boolean"
     elif "string" in types:
         type_id = "string"
     else:
