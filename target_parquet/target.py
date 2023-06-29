@@ -29,6 +29,10 @@ class TargetParquet(Target):
         writers = Writers()
         writers.close_all()
 
+    def _handle_max_record_age(self) -> None:
+        # Don't do anything at all, we don't need this behavior
+        pass
+
 
 if __name__ == "__main__":
     TargetParquet.cli()
