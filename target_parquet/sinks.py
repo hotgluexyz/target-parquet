@@ -1,6 +1,7 @@
 """Parquet target sink class, which handles writing streams."""
 import datetime
 import json
+from typing import Dict
 
 import pyarrow as pa
 from dateutil import parser as datetime_parser
@@ -110,6 +111,15 @@ class ParquetSink(BatchSink):
         """Initialize target sink."""
         super().__init__(target, stream_name, schema, key_properties)
         self._validator = ParquetValidator(self.schema, format_checker=None)
+
+    def _validate_and_parse(self, record: Dict) -> Dict:
+        try:
+            return super()._validate_and_parse(record)
+        except Exception as e:
+            if self._config.get("strict_validation", False):
+                raise e
+            self.logger.warning(f"Error validating and parsing record: {e}")
+            return record
 
     @property
     def datetime_error_treatment(self) -> DatetimeErrorTreatmentEnum:
