@@ -99,7 +99,7 @@ def parse_record_value(record_value, property: dict):
 class ParquetSink(BatchSink):
     """Parquet target sink class."""
 
-    max_size = 10000
+    max_size = 100
 
     def __init__(
         self,
@@ -148,6 +148,5 @@ class ParquetSink(BatchSink):
         self.writers.update_job_metrics(self.stream_name)
 
     def process_batch(self, context: dict) -> None:
-
         table = pa.Table.from_pylist(context["records"], schema=context["schema"])
-        self.writers.write(self.stream_name, table)
+        self.writers.write(self.stream_name, table, row_group_size=self.max_size)
