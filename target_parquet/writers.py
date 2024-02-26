@@ -41,13 +41,13 @@ class Writers(metaclass=SingletonMeta):
     def exist_writer(self, stream_name: str):
         return self._writers.get(stream_name) is not None
 
-    def write(self, stream_name: str, row):
+    def write(self, stream_name: str, row, row_group_size=None):
         writer = self._writers.get(stream_name)
 
         if not writer:
             return
 
-        writer.write(row)
+        writer.write(row, row_group_size=row_group_size)
 
     def update_job_metrics(self, stream_name: str):
         job_metrics_path = "job_metrics.json"
