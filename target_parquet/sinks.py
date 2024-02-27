@@ -41,7 +41,7 @@ def build_pyarrow_field(key: str, value: dict):
         value = value["anyOf"][0]
     types = value.get("type", ["string", "null"])
 
-    is_nullable = any(i for i in ("null", "array", "object") if i in types)
+    is_nullable = any(i for i in ("null", "array", "object") if i in types) or value.get("format") == "date-time"
 
     if is_nullable:
         types = remove_null_string(types)
