@@ -127,8 +127,13 @@ class ParquetSink(BatchSink):
 
     def start_batch(self, context: dict) -> None:
         """Start a batch."""
+        selected_cols = None
+        if self.config and self.config.get("fixed_headers"):
+            fixed_headers = self.config['fixed_headers']
+            selected_cols = fixed_headers.get(self.stream_name)
+
         schema = pa.schema(
-            [build_pyarrow_field(k, v) for (k, v) in self.schema["properties"].items()],
+            [build_pyarrow_field(k, v) for (k, v) in self.schema["properties"].items() if selected_cols is None or k in selected_cols],
             metadata={"key_properties": json.dumps(self.key_properties)},
         )
         context["schema"] = schema
