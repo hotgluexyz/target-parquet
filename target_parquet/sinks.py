@@ -116,9 +116,10 @@ class ParquetSink(BatchSink):
         try:
             return super()._validate_and_parse(record)
         except Exception as e:
+            # NOTE: If the below flag is not on we will silently have typing issues and not report them
             if self._config.get("strict_validation", False):
+                self.logger.exception(f"Error validating and parsing record.")
                 raise e
-            self.logger.warning(f"Error validating and parsing record: {e}")
             return record
 
     @property
