@@ -1,15 +1,18 @@
 """Parquet target sink class, which handles writing streams."""
 import datetime
 import json
+import os
 from typing import Dict
 
 import pyarrow as pa
+import pyarrow.parquet as pq
 from dateutil import parser as datetime_parser
 from jsonschema import FormatChecker
 from singer_sdk.sinks import BatchSink
 
 from target_parquet.validator import ParquetValidator
 from target_parquet.writers import Writers
+from target_parquet import util
 from singer_sdk.helpers._typing import DatetimeErrorTreatmentEnum
 
 
@@ -99,7 +102,9 @@ def parse_record_value(record_value, property: dict):
 class ParquetSink(BatchSink):
     """Parquet target sink class."""
 
-    max_size = 10000
+    @property
+    def max_size(self) -> int:
+        return self._config.get("BATCH_MAX_SIZE") or 1000
 
     def __init__(
         self,
@@ -135,7 +140,7 @@ class ParquetSink(BatchSink):
         context["records"] = []
 
         self.writers = Writers()
-        self.writers.start_writer(self.stream_name, schema)
+        self.writers.start_schema(self.stream_name, schema)
 
     def process_record(self, record: dict, context: dict) -> None:
         """Process the record."""
@@ -151,3 +156,52 @@ class ParquetSink(BatchSink):
 
         table = pa.Table.from_pylist(context["records"], schema=context["schema"])
         self.writers.write(self.stream_name, table)
+
+    def __del__(self):
+        # This is going to have the following format:
+        #
+        # { "STREAM_NAME": { "final_file_path": "FILE_PATH", "file_paths": ["FILE PATHS"] } }
+        #
+        # The "final_file_path" is going to be the file path of the final parquet file (the "combined" one).
+        # Ideally its value is going to be the first file path.
+        #
+        # The "file_paths" field is going to store all the file paths of that stream.
+        parquet_files = {}
+
+        # Building "parquet_files"
+        for f in sorted(os.listdir(".")):
+            if not (os.path.isfile(f) and f.endswith(".parquet")):
+                continue
+
+            stream_name = f.split("-")[0]
+
+            # If it's not initialized yet, initialize it and add "f" to "final_file_path"
+            if not parquet_files.get(stream_name):
+                parquet_files[stream_name] = {
+                    # "final_file_path": f"{stream_name}-{util.get_date_string()}.parquet",
+                    "final_file_path": f"davi.parquet",
+                    "file_paths": []
+                }
+
+            parquet_files[stream_name]["file_paths"].append(f)
+
+        for stream_dict in parquet_files.values():
+            file_paths = stream_dict["file_paths"]
+
+            if not file_paths:
+                continue
+
+            final_table = pq.read_table(file_paths[0])
+
+            os.remove(file_paths[0])
+
+            file_paths = file_paths[1:]
+
+            for file_path in file_paths:
+                table = pq.read_table(file_path)
+
+                final_table = pa.concat_tables([final_table, table])
+
+                os.remove(file_path)
+
+            pq.write_table(final_table, stream_dict["final_file_path"])
