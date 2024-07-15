@@ -178,8 +178,7 @@ class ParquetSink(BatchSink):
             # If it's not initialized yet, initialize it and add "f" to "final_file_path"
             if not parquet_files.get(stream_name):
                 parquet_files[stream_name] = {
-                    # "final_file_path": f"{stream_name}-{util.get_date_string()}.parquet",
-                    "final_file_path": f"davi.parquet",
+                    "final_file_path": f"{stream_name}-{util.get_date_string()}.parquet",
                     "file_paths": []
                 }
 
