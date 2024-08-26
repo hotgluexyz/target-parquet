@@ -44,7 +44,7 @@ def build_pyarrow_field(key: str, value: dict):
         value = value["anyOf"][0]
     types = value.get("type", ["string", "null"])
 
-    is_nullable = any(i for i in ("null", "array", "object") if i in types)
+    is_nullable = any(i for i in ("null", "array", "object") if i in types) or value.get("format") == "date-time"
 
     if is_nullable:
         types = remove_null_string(types)
@@ -121,9 +121,10 @@ class ParquetSink(BatchSink):
         try:
             return super()._validate_and_parse(record)
         except Exception as e:
+            # NOTE: If the below flag is not on we will silently have typing issues and not report them
             if self._config.get("strict_validation", False):
+                self.logger.exception(f"Error validating and parsing record.")
                 raise e
-            self.logger.warning(f"Error validating and parsing record: {e}")
             return record
 
     @property
@@ -132,8 +133,13 @@ class ParquetSink(BatchSink):
 
     def start_batch(self, context: dict) -> None:
         """Start a batch."""
+        selected_cols = None
+        if self.config and self.config.get("fixed_headers"):
+            fixed_headers = self.config['fixed_headers']
+            selected_cols = fixed_headers.get(self.stream_name)
+
         schema = pa.schema(
-            [build_pyarrow_field(k, v) for (k, v) in self.schema["properties"].items()],
+            [build_pyarrow_field(k, v) for (k, v) in self.schema["properties"].items() if selected_cols is None or k in selected_cols],
             metadata={"key_properties": json.dumps(self.key_properties)},
         )
         context["schema"] = schema
