@@ -14,6 +14,8 @@ from singer_sdk.helpers._typing import DatetimeErrorTreatmentEnum
 
 
 def remove_null_string(array: list):
+    if not isinstance(array, list):
+        return array
     return list(filter(lambda e: e != "null", array))
 
 
@@ -69,7 +71,8 @@ def parse_record_value(record_value, property: dict):
     if "anyOf" in property:
         property = property["anyOf"][0]
 
-    type_id = remove_null_string(property["type"])[0]
+    types = remove_null_string(property["type"])
+    type_id = types[0] if isinstance(types, list) else types
 
     if type_id == "number":
         return float(record_value)
