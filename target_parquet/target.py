@@ -25,7 +25,8 @@ class TargetParquet(Target):
     ).to_dict()
     default_sink_class = ParquetSink
 
-    def __del__(self):
+    def _process_endofpipe(self) -> None:
+        super()._process_endofpipe()
         writers = Writers()
         writers.close_all()
 
