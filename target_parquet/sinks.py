@@ -163,7 +163,7 @@ class ParquetSink(BatchSink):
         table = pa.Table.from_pylist(context["records"], schema=context["schema"])
         self.writers.write(self.stream_name, table)
 
-    def __del__(self):
+    def clean_up(self) -> None:
         # This is going to have the following format:
         #
         # { "STREAM_NAME": { "final_file_path": "FILE_PATH", "file_paths": ["FILE PATHS"] } }
