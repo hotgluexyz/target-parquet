@@ -64,15 +64,18 @@ def build_pyarrow_field(key: str, value: dict):
     )
 
 
-def parse_record_value(record_value, property: dict):
+def parse_record_value(record_value, key: str, property: dict):
     if record_value in [None, ""]:
         return None
 
     if "anyOf" in property:
         property = property["anyOf"][0]
 
-    types = remove_null_string(property["type"])
-    type_id = types[0] if isinstance(types, list) else types
+    if "type" in property:
+        types = remove_null_string(property["type"])
+        type_id = types[0] if isinstance(types, list) else types
+    else:
+        raise Exception(f"No type found for property {key}:{property}. Check your schema.")
 
     if type_id == "number":
         return float(record_value)
@@ -150,7 +153,7 @@ class ParquetSink(BatchSink):
         """Process the record."""
 
         for (key, property) in self.schema["properties"].items():
-            record[key] = parse_record_value(record.get(key), property)
+            record[key] = parse_record_value(record.get(key), key, property)
 
         context["records"].append(record)
 
