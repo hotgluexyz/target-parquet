@@ -75,7 +75,8 @@ def parse_record_value(record_value, key: str, property: dict):
         types = remove_null_string(property["type"])
         type_id = types[0] if isinstance(types, list) else types
     else:
-        raise Exception(f"No type found for property {key}:{property}. Check your schema.")
+        # raise Exception(f"No type found for property {key}:{property}. Check your schema.")
+        type_id = "string"
 
     if type_id == "number":
         return float(record_value)
