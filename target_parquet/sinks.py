@@ -72,7 +72,10 @@ def parse_record_value(record_value, property: dict):
     if "anyOf" in property:
         property = property["anyOf"][0]
 
-    type_id = remove_null_string(property["type"])[0]
+    if "type" in property:
+        type_id = remove_null_string(property["type"])[0]
+    else:
+        type_id = "string"
 
     if type_id == "number":
         return float(record_value)
