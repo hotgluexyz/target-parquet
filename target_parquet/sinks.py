@@ -1,8 +1,10 @@
 """Parquet target sink class, which handles writing streams."""
+import os
 import datetime
 import json
-import os
+import logging
 from typing import Dict
+from dateutil import parser
 
 import pyarrow as pa
 import pyarrow.parquet as pq
@@ -13,8 +15,11 @@ from singer_sdk.sinks import BatchSink
 from target_parquet.validator import ParquetValidator
 from target_parquet.writers import Writers
 from target_parquet import util
-from singer_sdk.helpers._typing import DatetimeErrorTreatmentEnum
-
+from singer_sdk.helpers._typing import (
+    DatetimeErrorTreatmentEnum,
+    get_datelike_property_type,
+    handle_invalid_timestamp_in_record,
+)
 
 def remove_null_string(array: list):
     return list(filter(lambda e: e != "null", array))
@@ -213,3 +218,34 @@ class ParquetSink(BatchSink):
                 os.remove(file_path)
 
             pq.write_table(final_table, stream_dict["final_file_path"])
+
+    def _parse_timestamps_in_record(
+            self, record: Dict, schema: Dict, treatment: DatetimeErrorTreatmentEnum
+        ) -> None:
+            """Parse strings to datetime.datetime values, repairing or erroring on failure.
+            Attempts to parse every field that is of type date/datetime/time. If its value
+            is out of range, repair logic will be driven by the `treatment` input arg:
+            MAX, NULL, or ERROR.
+            Args:
+                record: Individual record in the stream.
+                schema: TODO
+                treatment: TODO
+            """
+            for key in record.keys():
+                datelike_type = get_datelike_property_type(schema["properties"][key])
+                if datelike_type:
+                    try:
+                        date_val = record[key]
+                        if record[key] is not None:
+                            date_val = parser.parse(date_val)
+                    except Exception as ex:
+                        date_val = handle_invalid_timestamp_in_record(
+                            record,
+                            [key],
+                            date_val,
+                            datelike_type,
+                            ex,
+                            treatment,
+                            logging.getLogger('singer-sdk'),
+                        )
+                    record[key] = date_val
