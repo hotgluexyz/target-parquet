@@ -3,7 +3,7 @@ import datetime
 import json
 import logging
 from dateutil import parser
-from typing import Dict
+from typing import Any, Dict, List, Optional
 
 import pyarrow as pa
 from dateutil import parser as datetime_parser
@@ -15,8 +15,11 @@ from target_parquet.writers import Writers
 from singer_sdk.helpers._typing import (
     DatetimeErrorTreatmentEnum,
     get_datelike_property_type,
-    handle_invalid_timestamp_in_record,
 )
+
+_MAX_TIMESTAMP = "9999-12-31 23:59:59.999999"
+_MAX_TIME = "23:59:59.999999"
+
 
 def remove_null_string(array: list):
     if not isinstance(array, list):
@@ -69,7 +72,7 @@ def build_pyarrow_field(key: str, value: dict):
     )
 
 
-def parse_record_value(record_value, key: str, property: dict):
+def parse_record_value(record_value, property: dict, logger: logging.Logger):
     if record_value in [None, ""]:
         return None
 
@@ -90,12 +93,14 @@ def parse_record_value(record_value, key: str, property: dict):
         return int(record_value)
 
     if type_id == "string" and property.get("format") == "date-time":
-        return (
-            record_value
-            if isinstance(record_value, datetime.datetime)
-            else datetime_parser.parse(record_value)
-        )
-
+        if isinstance(record_value, datetime.datetime):
+            return record_value
+        try:
+            return datetime_parser.parse(record_value)
+        except Exception as e:
+            logger.warning(f"Could not parse date-time value: {record_value}. Error: {e}")
+            return None
+        
     if type_id == "string":
         return str(record_value)
 
@@ -107,6 +112,37 @@ def parse_record_value(record_value, key: str, property: dict):
 
     return record_value
 
+def handle_invalid_timestamp_in_record(
+        record,
+        key_breadcrumb: List[str],
+        invalid_value: Any,
+        datelike_typename: str,
+        ex: Exception,
+        treatment: Optional[DatetimeErrorTreatmentEnum],
+        logger: logging.Logger,
+    ) -> Any:
+        """Apply treatment or raise an error for invalid time values, 
+        but avoid logging empty string cases."""
+
+        treatment = treatment or DatetimeErrorTreatmentEnum.ERROR
+        msg = (
+            f"Could not parse value '{invalid_value}' for "
+            f"field '{':'.join(key_breadcrumb)}'."
+        )
+
+        # Skip logging if the invalid value is an empty string
+        if isinstance(invalid_value, str) and invalid_value == "":
+            return None if treatment == DatetimeErrorTreatmentEnum.NULL else _MAX_TIMESTAMP
+
+        if treatment == DatetimeErrorTreatmentEnum.MAX:
+            logger.warning(f"{msg}. Replacing with MAX value.\n{ex}\n")
+            return _MAX_TIMESTAMP if datelike_typename != "time" else _MAX_TIME
+
+        if treatment == DatetimeErrorTreatmentEnum.NULL:
+            logger.warning(f"{msg}. {logger.name} Replacing with NULL.\n{ex}\n")
+            return None
+
+        raise ValueError(msg)
 
 class ParquetSink(BatchSink):
     """Parquet target sink class."""
@@ -159,7 +195,7 @@ class ParquetSink(BatchSink):
         """Process the record."""
 
         for (key, property) in self.schema["properties"].items():
-            record[key] = parse_record_value(record.get(key), key, property)
+            record[key] = parse_record_value(record.get(key), property, self.logger)
 
         context["records"].append(record)
 
@@ -199,6 +235,6 @@ class ParquetSink(BatchSink):
                         datelike_type,
                         ex,
                         treatment,
-                        logging.getLogger('singer-sdk'),
+                        self.logger,
                     )
                 record[key] = date_val
