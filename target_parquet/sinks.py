@@ -20,6 +20,10 @@ from singer_sdk.helpers._typing import (
     get_datelike_property_type,
 )
 
+_MAX_TIMESTAMP = "9999-12-31 23:59:59.999999"
+_MAX_TIME = "23:59:59.999999"
+
+
 def remove_null_string(array: list):
     return list(filter(lambda e: e != "null", array))
 
@@ -107,6 +111,37 @@ def parse_record_value(record_value, property: dict, logger: logging.Logger):
 
     return record_value
 
+def handle_invalid_timestamp_in_record(
+        record,
+        key_breadcrumb: List[str],
+        invalid_value: Any,
+        datelike_typename: str,
+        ex: Exception,
+        treatment: Optional[DatetimeErrorTreatmentEnum],
+        logger: logging.Logger,
+    ) -> Any:
+        """Apply treatment or raise an error for invalid time values, 
+        but avoid logging empty string cases."""
+
+        treatment = treatment or DatetimeErrorTreatmentEnum.ERROR
+        msg = (
+            f"Could not parse value '{invalid_value}' for "
+            f"field '{':'.join(key_breadcrumb)}'."
+        )
+
+        # Skip logging if the invalid value is an empty string
+        if isinstance(invalid_value, str) and invalid_value == "":
+            return None if treatment == DatetimeErrorTreatmentEnum.NULL else _MAX_TIMESTAMP
+
+        if treatment == DatetimeErrorTreatmentEnum.MAX:
+            logger.warning(f"{msg}. Replacing with MAX value.\n{ex}\n")
+            return _MAX_TIMESTAMP if datelike_typename != "time" else _MAX_TIME
+
+        if treatment == DatetimeErrorTreatmentEnum.NULL:
+            logger.warning(f"{msg}. {logger.name} Replacing with NULL.\n{ex}\n")
+            return None
+
+        raise ValueError(msg)
 
 class ParquetSink(BatchSink):
     """Parquet target sink class."""
@@ -220,39 +255,6 @@ class ParquetSink(BatchSink):
 
             pq.write_table(final_table, stream_dict["final_file_path"])
 
-    def handle_invalid_timestamp_in_record(
-        record,
-        key_breadcrumb: List[str],
-        invalid_value: Any,
-        datelike_typename: str,
-        ex: Exception,
-        treatment: Optional[DatetimeErrorTreatmentEnum],
-        logger: logging.Logger,
-    ) -> Any:
-        """Apply treatment or raise an error for invalid time values, 
-        but avoid logging empty string cases."""
-
-        treatment = treatment or DatetimeErrorTreatmentEnum.ERROR
-        msg = (
-            f"Could not parse value '{invalid_value}' for "
-            f"field '{':'.join(key_breadcrumb)}'."
-        )
-
-        # Skip logging if the invalid value is an empty string
-        if isinstance(invalid_value, str) and invalid_value == "":
-            return None if treatment == DatetimeErrorTreatmentEnum.NULL else _MAX_TIMESTAMP
-
-        # Log a warning for non-string values
-        if not isinstance(invalid_value, str):
-            logger.warning(f"{msg}. {logger.name} Replacing with NULL.\n{ex}\n")
-
-        if treatment == DatetimeErrorTreatmentEnum.MAX:
-            return _MAX_TIMESTAMP if datelike_typename != "time" else _MAX_TIME
-
-        if treatment == DatetimeErrorTreatmentEnum.NULL:
-            return None
-
-        raise ValueError(msg)
     def _parse_timestamps_in_record(
             self, record: Dict, schema: Dict, treatment: DatetimeErrorTreatmentEnum
         ) -> None:
