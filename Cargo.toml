@@ -1,0 +1,15 @@
+[package]
+name = "target-parquet"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+arrow = { version = "55.1.0", features = ["prettyprint"] }
+parquet = { version = "55.1.0", features = ["arrow"] }
+chrono = { version = "0.4", features = ["serde"] }
+clap = "2.33"
+env_logger = "0.10"
+jsonschema = "0.17"
+log = "0.4"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
