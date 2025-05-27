@@ -70,7 +70,7 @@ def build_pyarrow_field(key: str, value: dict):
 
 
 def parse_record_value(record_value, key: str, property: dict):
-    if record_value in [None, ""]:
+    if record_value in [None]:
         return None
 
     if "anyOf" in property:
@@ -82,6 +82,10 @@ def parse_record_value(record_value, key: str, property: dict):
     else:
         # raise Exception(f"No type found for property {key}:{property}. Check your schema.")
         type_id = "string"
+
+
+    if type_id != "string" and record_value == "":
+        return None
 
     if type_id == "number":
         return float(record_value)
