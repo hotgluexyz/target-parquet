@@ -255,9 +255,11 @@ class ParquetSink(BatchSink):
                 for i in range(0, len(file_paths), 1000):
                     chunk = file_paths[i : i + 1000]
 
-                    # this function is called multiple times so the final file path is the same as the previous processed file without sequence number
-                    # new data is ov erwritten there but as the writer is not closed when we read the file table = pq.read_table(file_path)
-                    # we get "Parquet magic bytes not found in footer. Either the file is corrupted or this is not a parquet file"
+                    # The clean_up() function is called multiple times, and for some chunks, 
+                    # the final_file_path ends up matching a previously processed file (which doesn't include a sequence number). 
+                    # This causes the function to attempt overwriting the same file it’s also trying to read. 
+                    # Since the writer may not be fully closed at that moment, reading that file results in:
+                    # "Parquet magic bytes not found in footer. Either the file is corrupted or this is not a parquet file."
                     if final_file_path in chunk:
                         # rename the final file path to be different
                         latest_file_path = f"{final_file_path.split('.')[0]}-latest.parquet"
