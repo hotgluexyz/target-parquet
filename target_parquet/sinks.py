@@ -254,6 +254,17 @@ class ParquetSink(BatchSink):
                 # read data from file_paths in chunks of 1000 to manage memory usage
                 for i in range(0, len(file_paths), 1000):
                     chunk = file_paths[i : i + 1000]
+
+                    # this function is called multiple times so the final file path is the same as the previous processed file without sequence number
+                    # new data is ov erwritten there but as the writer is not closed when we read the file table = pq.read_table(file_path)
+                    # we get "Parquet magic bytes not found in footer. Either the file is corrupted or this is not a parquet file"
+                    if final_file_path in chunk:
+                        # rename the final file path to be different
+                        latest_file_path = f"{final_file_path.split('.')[0]}-latest.parquet"
+                        shutil.move(final_file_path, latest_file_path)
+                        # replace the chunk with the same name as final file path with the renamed file
+                        chunk[chunk.index(final_file_path)] = latest_file_path
+
                     for file_path in chunk:
                         # read data from file_path into a table
                         table = pq.read_table(file_path)
