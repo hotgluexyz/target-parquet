@@ -33,7 +33,7 @@ def get_pyarrow_type(type_id: str, format=None):
         return pa.null()
 
     if type_id == "number":
-        return pa.float32()
+        return pa.float64()
 
     if type_id == "integer":
         return pa.int64()
