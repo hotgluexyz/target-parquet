@@ -5,9 +5,11 @@ import json
 import logging
 from typing import Dict, Any, List, Optional
 from dateutil import parser
+import shutil
 
 import pyarrow as pa
 import pyarrow.parquet as pq
+from pyarrow.parquet import ParquetWriter
 from dateutil import parser as datetime_parser
 from jsonschema import FormatChecker
 from singer_sdk.sinks import BatchSink
@@ -236,24 +238,58 @@ class ParquetSink(BatchSink):
 
         for stream_dict in parquet_files.values():
             file_paths = stream_dict["file_paths"]
-
             if not file_paths:
                 continue
 
-            final_table = pq.read_table(file_paths[0])
+            # If there is only one file, rename it to the final file path
+            if len(file_paths) == 1:
+                shutil.move(file_paths[0], stream_dict["final_file_path"])
+                continue
+            
+            # initialize writer to None
+            writer = None
+            final_file_path = stream_dict["final_file_path"] # get the final file path
+            file_path = None
+            try:
+                # read data from file_paths in chunks of 1000 to manage memory usage
+                for i in range(0, len(file_paths), 1000):
+                    chunk = file_paths[i : i + 1000]
 
-            os.remove(file_paths[0])
+                    # The clean_up() function is called multiple times, and for some chunks, 
+                    # the final_file_path ends up matching a previously processed file (which doesn't include a sequence number). 
+                    # This causes the function to attempt overwriting the same file it’s also trying to read. 
+                    # Since the writer may not be fully closed at that moment, reading that file results in:
+                    # "Parquet magic bytes not found in footer. Either the file is corrupted or this is not a parquet file."
+                    if final_file_path in chunk:
+                        # rename the final file path to be different
+                        latest_file_path = f"{final_file_path.split('.')[0]}-latest.parquet"
+                        shutil.move(final_file_path, latest_file_path)
+                        # replace the chunk with the same name as final file path with the renamed file
+                        chunk[chunk.index(final_file_path)] = latest_file_path
 
-            file_paths = file_paths[1:]
-
-            for file_path in file_paths:
-                table = pq.read_table(file_path)
-
-                final_table = pa.concat_tables([final_table, table])
-
-                os.remove(file_path)
-
-            pq.write_table(final_table, stream_dict["final_file_path"])
+                    for file_path in chunk:
+                        # read data from file_path into a table
+                        table = pq.read_table(file_path)
+                        # if writer is None, create a new writer with the final file path and the table schema
+                        if writer is None:
+                            writer = ParquetWriter(final_file_path, table.schema)
+                        # write the table to the final file
+                        writer.write_table(table)
+                        # delete the original file
+                        os.remove(file_path)
+                        del table
+                    files_processed = i + 1000 if i + 1000 < len(file_paths) else len(file_paths)
+                    self.logger.info(f"First {files_processed} files processed")
+                self.logger.info(f"All files processed. Final file path: {final_file_path}")
+            except Exception as e:
+                self.logger.error(
+                    f"Error combining parquet files: {e}, stopped at file {file_path}"
+                )
+                raise e
+            finally:
+                # close the writer
+                if writer:
+                    writer.close()
 
     def _parse_timestamps_in_record(
             self, record: Dict, schema: Dict, treatment: DatetimeErrorTreatmentEnum
