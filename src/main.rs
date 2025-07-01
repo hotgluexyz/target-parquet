@@ -535,6 +535,7 @@ fn main() {
         Config {
             destination_path: None,
             validate: None,
+            strict_validation: None,
             batch_size: None,
             metrics_write_threshold: None,
         }
