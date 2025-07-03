@@ -251,21 +251,21 @@ class ParquetSink(BatchSink):
             final_file_path = stream_dict["final_file_path"] # get the final file path
             file_path = None
             try:
+                # The clean_up() function is called multiple times, and for some chunks, 
+                # the final_file_path ends up matching a previously processed file (which doesn't include a sequence number). 
+                # This causes the function to attempt overwriting the same file it’s also trying to read. 
+                # Since the writer may not be fully closed at that moment, reading that file results in:
+                # "Parquet magic bytes not found in footer. Either the file is corrupted or this is not a parquet file."
+                if final_file_path in file_paths:
+                    # rename the final file path to be different
+                    latest_file_path = f"{final_file_path.split('.')[0]}-latest.parquet"
+                    shutil.move(final_file_path, latest_file_path)
+                    # replace the chunk with the same name as final file path with the renamed file
+                    file_paths[file_paths.index(final_file_path)] = latest_file_path
+
                 # read data from file_paths in chunks of 1000 to manage memory usage
                 for i in range(0, len(file_paths), 1000):
                     chunk = file_paths[i : i + 1000]
-
-                    # The clean_up() function is called multiple times, and for some chunks, 
-                    # the final_file_path ends up matching a previously processed file (which doesn't include a sequence number). 
-                    # This causes the function to attempt overwriting the same file it’s also trying to read. 
-                    # Since the writer may not be fully closed at that moment, reading that file results in:
-                    # "Parquet magic bytes not found in footer. Either the file is corrupted or this is not a parquet file."
-                    if final_file_path in chunk:
-                        # rename the final file path to be different
-                        latest_file_path = f"{final_file_path.split('.')[0]}-latest.parquet"
-                        shutil.move(final_file_path, latest_file_path)
-                        # replace the chunk with the same name as final file path with the renamed file
-                        chunk[chunk.index(final_file_path)] = latest_file_path
 
                     for file_path in chunk:
                         # read data from file_path into a table
