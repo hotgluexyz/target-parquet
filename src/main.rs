@@ -6,7 +6,7 @@ use std::path::Path;
 use std::process::exit;
 use std::sync::Arc;
 
-use arrow::array::{Array, StringArray};
+use arrow::array::Array;
 use arrow::datatypes::{DataType, Field, Schema as ArrowSchema};
 use arrow::record_batch::RecordBatch;
 use chrono::{DateTime, NaiveDateTime, Utc};
@@ -17,6 +17,7 @@ use parquet::file::properties::{WriterProperties, WriterVersion};
 use serde::{Deserialize, Serialize, de};
 use serde_json::{json, Map, Value, Deserializer};
 use log::{debug, error, warn};
+use regex::Regex;
 
 // Initialize env_logger to target stderr.
 use env_logger;
@@ -52,12 +53,11 @@ fn validate_datetime(value: &str) -> bool {
 }
 
 fn parse_json_with_infinity(input: &str) -> Result<Value, serde_json::Error> {
-    // Replace Infinity with a string representation that serde_json can handle
-    let modified_input = input.replace("Infinity", "\"Infinity\"")
-        .replace("-Infinity", "\"-Infinity\"")
-        .replace("NaN", "\"NaN\"");
-    
-    // Parse the modified JSON
+    // Regex to match bare Infinity, -Infinity, and NaN not within quotes
+    let re = Regex::new(r#"(?P<pre>[:\[\{,\s])(?P<num>-?Infinity|NaN)(?P<post>[,\}\]\s])"#).unwrap();
+
+    let modified_input = re.replace_all(input, "${pre}\"${num}\"${post}");
+
     let mut deserializer = Deserializer::from_str(&modified_input);
     Value::deserialize(&mut deserializer)
 }
@@ -153,7 +153,7 @@ struct ParquetWriter {
     writer: ArrowWriter<File>,
     schema: Arc<ArrowSchema>,
     batch_size: usize,
-    current_batch: Vec<Vec<String>>,
+    current_batch: Vec<Vec<Value>>,
     record_count: u64,
 }
 
@@ -172,7 +172,7 @@ impl ParquetWriter {
         }
     }
 
-    fn add_record(&mut self, record: Vec<String>) -> Result<(), String> {
+    fn add_record(&mut self, record: Vec<Value>) -> Result<(), String> {
         self.current_batch.push(record);
         self.record_count += 1;
 
@@ -187,41 +187,79 @@ impl ParquetWriter {
         if self.current_batch.is_empty() {
             return Ok(());
         }
-
+    
         let mut arrays: Vec<Arc<dyn Array>> = Vec::new();
-
-        for i in 0..self.schema.fields().len() {
-            let field = self.schema.field(i);
-            let values: Vec<String> = self.current_batch.iter()
-                .map(|row| row[i].clone())
+        let num_fields = self.schema.fields().len();
+    
+        for col_idx in 0..num_fields {
+            let field = self.schema.field(col_idx);
+            let data_type = field.data_type();
+            let column_values: Vec<&Value> = self
+                .current_batch
+                .iter()
+                .map(|row| &row[col_idx])
                 .collect();
-
-            let array: Arc<dyn Array> = match field.data_type() {
+    
+            let array: Arc<dyn Array> = match data_type {
                 DataType::Int64 => {
-                    let int_values: Vec<Option<i64>> = values.iter()
-                        .map(|v| v.parse::<i64>().ok())
+                    let parsed: Vec<Option<i64>> = column_values
+                        .iter()
+                        .map(|v| v.as_i64())
                         .collect();
-                    Arc::new(arrow::array::Int64Array::from(int_values))
+                    Arc::new(arrow::array::Int64Array::from(parsed))
+                },
+                DataType::Float64 => {
+                    let parsed: Vec<Option<f64>> = column_values
+                        .iter()
+                        .map(|v| match v {
+                            Value::Number(n) => n.as_f64(),
+                            Value::String(s) => s.parse::<f64>().ok(), // handle Infinity/NaN
+                            _ => None,
+                        })
+                        .collect();
+                    Arc::new(arrow::array::Float64Array::from(parsed))
+                },
+                DataType::Boolean => {
+                    let parsed: Vec<Option<bool>> = column_values
+                        .iter()
+                        .map(|v| v.as_bool())
+                        .collect();
+                    Arc::new(arrow::array::BooleanArray::from(parsed))
                 },
                 DataType::Utf8 => {
-                    Arc::new(StringArray::from(values))
+                    let parsed: Vec<Option<String>> = column_values
+                        .iter()
+                        .map(|v| match v {
+                            Value::String(s) => Some(s.clone()),
+                            Value::Number(n) => Some(n.to_string()),
+                            Value::Bool(b) => Some(b.to_string()),
+                            Value::Null => None,
+                            _ => serde_json::to_string(v).ok(),
+                        })
+                        .collect();
+                    Arc::new(arrow::array::StringArray::from(parsed))
                 },
                 _ => {
-                    Arc::new(StringArray::from(values))
+                    // Fallback: serialize anything as string
+                    let parsed: Vec<Option<String>> = column_values
+                        .iter()
+                        .map(|v| serde_json::to_string(v).ok())
+                        .collect();
+                    Arc::new(arrow::array::StringArray::from(parsed))
                 }
             };
+    
             arrays.push(array);
         }
-
+    
         let batch = RecordBatch::try_new(self.schema.clone(), arrays)
             .map_err(|e| e.to_string())?;
-
-        self.writer.write(&batch)
-            .map_err(|e| e.to_string())?;
-
+    
+        self.writer.write(&batch).map_err(|e| e.to_string())?;
         self.current_batch.clear();
         Ok(())
     }
+
 
     fn close(mut self) -> Result<(), String> {
         self.flush_batch()?;
@@ -359,23 +397,24 @@ fn persist_messages(
                             let data_type = match field_schema.get("type") {
                                 Some(Value::String(t)) => match t.as_str() {
                                     "integer" => DataType::Int64,
+                                    "number" => DataType::Float64,
                                     "string" => DataType::Utf8,
                                     "object" => DataType::Utf8,
                                     "array" => DataType::Utf8,
                                     _ => DataType::Utf8,
                                 },
                                 Some(Value::Array(types)) => {
-                                    // Handle union types (e.g., ["object", "string", "null"])
-                                    if types.iter().any(|t| t == "null") {
+                                    let type_strs: Vec<_> = types.iter().filter_map(|t| t.as_str()).collect();
+                                    if type_strs.contains(&"number") {
+                                        DataType::Float64
+                                    } else if type_strs.contains(&"integer") {
+                                        DataType::Int64
+                                    } else if type_strs.contains(&"boolean") {
+                                        DataType::Boolean
+                                    } else if type_strs.contains(&"string") {
                                         DataType::Utf8
                                     } else {
-                                        match types.first().and_then(|t| t.as_str()) {
-                                            Some("integer") => DataType::Int64,
-                                            Some("string") => DataType::Utf8,
-                                            Some("object") => DataType::Utf8,
-                                            Some("array") => DataType::Utf8,
-                                            _ => DataType::Utf8,
-                                        }
+                                        DataType::Utf8
                                     }
                                 }
                                 _ => DataType::Utf8,
@@ -392,33 +431,37 @@ fn persist_messages(
                     if let Value::Object(ref obj) = record_message.record {
                         let mut row = Vec::new();
                         for field in writer.schema.fields() {
-                            let value_str = match obj.get(field.name()) {
-                                Some(Value::String(s)) => s.clone(),
-                                Some(Value::Number(n)) => {
-                                    if n.is_f64() {
-                                        let f = n.as_f64().unwrap();
-                                        if f.is_infinite() {
-                                            if f.is_sign_positive() {
-                                                "Infinity".to_string()
-                                            } else {
-                                                "-Infinity".to_string()
-                                            }
-                                        } else if f.is_nan() {
-                                            "NaN".to_string()
-                                        } else {
-                                            n.to_string()
-                                        }
-                                    } else {
-                                        n.to_string()
-                                    }
-                                },
-                                Some(Value::Bool(b)) => b.to_string(),
-                                Some(Value::Object(o)) => serde_json::to_string(o).unwrap_or_default(),
-                                Some(Value::Array(a)) => serde_json::to_string(a).unwrap_or_default(),
-                                Some(Value::Null) | None => String::new(),
-                            };
-                            row.push(value_str);
+                            let value = obj.get(field.name()).cloned().unwrap_or(Value::Null);
+                            row.push(value);
                         }
+                        // for field in writer.schema.fields() {
+                        //     let value_str = match obj.get(field.name()) {
+                        //         Some(Value::String(s)) => s.clone(),
+                        //         Some(Value::Number(n)) => {
+                        //             if n.is_f64() {
+                        //                 let f = n.as_f64().unwrap();
+                        //                 if f.is_infinite() {
+                        //                     if f.is_sign_positive() {
+                        //                         "Infinity".to_string()
+                        //                     } else {
+                        //                         "-Infinity".to_string()
+                        //                     }
+                        //                 } else if f.is_nan() {
+                        //                     "NaN".to_string()
+                        //                 } else {
+                        //                     n.to_string()
+                        //                 }
+                        //             } else {
+                        //                 n.to_string()
+                        //             }
+                        //         },
+                        //         Some(Value::Bool(b)) => b.to_string(),
+                        //         Some(Value::Object(o)) => serde_json::to_string(o).unwrap_or_default(),
+                        //         Some(Value::Array(a)) => serde_json::to_string(a).unwrap_or_default(),
+                        //         Some(Value::Null) | None => String::new(),
+                        //     };
+                        //     row.push(value_str);
+                        // }
 
                         if let Err(e) = writer.add_record(row) {
                             panic!("Failed to write record: {}", e);
