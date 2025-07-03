@@ -1872,6 +1872,7 @@ dependencies = [
  "jsonschema",
  "log",
  "parquet",
+ "regex",
  "serde",
  "serde_json",
 ]

@@ -7,7 +7,7 @@ use std::process::exit;
 use std::sync::Arc;
 
 use arrow::array::Array;
-use arrow::datatypes::{DataType, Field, Schema as ArrowSchema};
+use arrow::datatypes::{DataType, Field, Schema as ArrowSchema, TimeUnit};
 use arrow::record_batch::RecordBatch;
 use chrono::{DateTime, NaiveDateTime, Utc};
 use clap::{App, Arg};
@@ -239,6 +239,33 @@ impl ParquetWriter {
                         .collect();
                     Arc::new(arrow::array::StringArray::from(parsed))
                 },
+                DataType::Timestamp(_, _) => {
+                    let parsed: Vec<Option<i64>> = column_values
+                        .iter()
+                        .map(|v| match v {
+                            Value::String(s) => {
+                                if s.is_empty() {
+                                    return None;
+                                }
+                                // Try to parse ISO 8601 timestamp to milliseconds since epoch
+                                if let Ok(dt) = DateTime::parse_from_rfc3339(s) {
+                                    Some(dt.timestamp_millis())
+                                } else if let Ok(dt) = NaiveDateTime::parse_from_str(s, "%Y-%m-%dT%H:%M:%S%.f") {
+                                    Some(dt.and_utc().timestamp_millis())
+                                } else if let Ok(dt) = DateTime::parse_from_str(s, "%Y-%m-%dT%H:%M:%S%.f%z") {
+                                    Some(dt.timestamp_millis())
+                                } else if let Ok(dt) = NaiveDateTime::parse_from_str(&format!("{}T00:00:00", s), "%Y-%m-%dT%H:%M:%S") {
+                                    Some(dt.and_utc().timestamp_millis())
+                                } else {
+                                    panic!("Invalid timestamp format: {}", s);
+                                }
+                            },
+                            Value::Null => None,
+                            _ => None, // Non-string values for timestamp fields
+                        })
+                        .collect();
+                    Arc::new(arrow::array::TimestampMillisecondArray::from(parsed))
+                },
                 _ => {
                     // Fallback: serialize anything as string
                     let parsed: Vec<Option<String>> = column_values
@@ -394,31 +421,42 @@ fn persist_messages(
                     let fields: Vec<Field> = properties
                         .iter()
                         .map(|(name, field_schema)| {
-                            let data_type = match field_schema.get("type") {
-                                Some(Value::String(t)) => match t.as_str() {
-                                    "integer" => DataType::Int64,
-                                    "number" => DataType::Float64,
-                                    "string" => DataType::Utf8,
-                                    "object" => DataType::Utf8,
-                                    "array" => DataType::Utf8,
+                            let data_format = field_schema.get("format").unwrap_or(&Value::Null);
+
+                            let data_type_str: &str = match field_schema.get("type") {
+                                Some(Value::String(t)) => t.as_str(),
+                                Some(Value::Array(types)) => {
+                                    let type_strs: Vec<_> = types.iter()
+                                        .filter_map(|t| t.as_str())
+                                        .filter(|&t| t != "null")
+                                        .collect();
+                                    
+                                    if type_strs.is_empty() {
+                                        "string"
+                                    } else {
+                                        type_strs[0]
+                                    }
+                                },
+                                _ => "string",
+                            };
+
+                            let data_type = match data_type_str {
+                                "integer" => DataType::Int64,
+                                "number" => DataType::Float64,
+                                "string" => match data_format {
+                                    Value::String(f) => match f.as_str() {
+                                        "date-time" => DataType::Timestamp(TimeUnit::Millisecond, None),
+                                        "date" => DataType::Timestamp(TimeUnit::Millisecond, None),
+                                        _ => DataType::Utf8,
+                                    },
                                     _ => DataType::Utf8,
                                 },
-                                Some(Value::Array(types)) => {
-                                    let type_strs: Vec<_> = types.iter().filter_map(|t| t.as_str()).collect();
-                                    if type_strs.contains(&"number") {
-                                        DataType::Float64
-                                    } else if type_strs.contains(&"integer") {
-                                        DataType::Int64
-                                    } else if type_strs.contains(&"boolean") {
-                                        DataType::Boolean
-                                    } else if type_strs.contains(&"string") {
-                                        DataType::Utf8
-                                    } else {
-                                        DataType::Utf8
-                                    }
-                                }
+                                "boolean" => DataType::Boolean,
+                                "object" => DataType::Utf8,
+                                "array" => DataType::Utf8,
                                 _ => DataType::Utf8,
                             };
+
                             Field::new(name, data_type, true)
                         })
                         .collect();
@@ -434,34 +472,6 @@ fn persist_messages(
                             let value = obj.get(field.name()).cloned().unwrap_or(Value::Null);
                             row.push(value);
                         }
-                        // for field in writer.schema.fields() {
-                        //     let value_str = match obj.get(field.name()) {
-                        //         Some(Value::String(s)) => s.clone(),
-                        //         Some(Value::Number(n)) => {
-                        //             if n.is_f64() {
-                        //                 let f = n.as_f64().unwrap();
-                        //                 if f.is_infinite() {
-                        //                     if f.is_sign_positive() {
-                        //                         "Infinity".to_string()
-                        //                     } else {
-                        //                         "-Infinity".to_string()
-                        //                     }
-                        //                 } else if f.is_nan() {
-                        //                     "NaN".to_string()
-                        //                 } else {
-                        //                     n.to_string()
-                        //                 }
-                        //             } else {
-                        //                 n.to_string()
-                        //             }
-                        //         },
-                        //         Some(Value::Bool(b)) => b.to_string(),
-                        //         Some(Value::Object(o)) => serde_json::to_string(o).unwrap_or_default(),
-                        //         Some(Value::Array(a)) => serde_json::to_string(a).unwrap_or_default(),
-                        //         Some(Value::Null) | None => String::new(),
-                        //     };
-                        //     row.push(value_str);
-                        // }
 
                         if let Err(e) = writer.add_record(row) {
                             panic!("Failed to write record: {}", e);
