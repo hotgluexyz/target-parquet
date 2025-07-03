@@ -15,7 +15,7 @@ use jsonschema::{Draft, JSONSchema};
 use parquet::arrow::ArrowWriter;
 use parquet::file::properties::{WriterProperties, WriterVersion};
 use serde::{Deserialize, Serialize, de};
-use serde_json::{json, Map, Value, Deserializer};
+use serde_json::{json, Map, Value};
 use log::{debug, error, warn};
 use regex::Regex;
 
@@ -52,14 +52,47 @@ fn validate_datetime(value: &str) -> bool {
     false
 }
 
-fn parse_json_with_infinity(input: &str) -> Result<Value, serde_json::Error> {
-    // Regex to match bare Infinity, -Infinity, and NaN not within quotes
-    let re = Regex::new(r#"(?P<pre>[:\[\{,\s])(?P<num>-?Infinity|NaN)(?P<post>[,\}\]\s])"#).unwrap();
+pub fn parse_json_with_infinity(input: &str) -> Result<Value, serde_json::Error> {
+    // Only run replacement if needed
+    if !input.contains("Infinity") && !input.contains("NaN") {
+        return serde_json::from_str(input);
+    }
 
-    let modified_input = re.replace_all(input, "${pre}\"${num}\"${post}");
+    // Regex: Match unquoted `: Infinity`, `: -Infinity`, `: NaN`
+    let re = Regex::new(r#"("[^"]*")\s*:\s*(-Infinity|Infinity|NaN)(\s*[,\}])"#).unwrap();
+    
+    let tmp = re.replace_all(input, |caps: &regex::Captures| {
+        format!("{}: \"__{}__\"{}", &caps[1], &caps[2], &caps[3])
+    });
 
-    let mut deserializer = Deserializer::from_str(&modified_input);
-    Value::deserialize(&mut deserializer)
+    let mut parsed: Value = serde_json::from_str(&tmp)?;
+
+    fn restore(v: &mut Value) {
+        match v {
+            Value::Object(map) => {
+                for val in map.values_mut() {
+                    restore(val);
+                }
+            }
+            Value::Array(arr) => {
+                for val in arr {
+                    restore(val);
+                }
+            }
+            Value::String(s) => {
+                *s = match s.as_str() {
+                    "__Infinity__" => "Infinity".into(),
+                    "__-Infinity__" => "-Infinity".into(),
+                    "__NaN__" => "NaN".into(),
+                    _ => s.to_string(),
+                }
+            }
+            _ => {}
+        }
+    }
+
+    restore(&mut parsed);
+    Ok(parsed)
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -354,6 +387,7 @@ fn persist_messages(
                 panic!("Unable to parse: {}\nError: {}", message, e);
             }
         };
+        debug!("Message: {}", message_value);
 
         let message_obj = match message_value.as_object() {
             Some(obj) => obj,
@@ -421,9 +455,24 @@ fn persist_messages(
                     let fields: Vec<Field> = properties
                         .iter()
                         .map(|(name, field_schema)| {
-                            let data_format = field_schema.get("format").unwrap_or(&Value::Null);
+                            // Handle anyOf case first
+                            let (effective_schema, data_format) = if let Some(Value::Array(any_of)) = field_schema.get("anyOf") {
+                                if any_of.is_empty() {
+                                    // If anyOf is empty, use default string type
+                                    (&json!({"type": ["string", "null"]}), &Value::Null)
+                                } else {
+                                    // Use the first element of anyOf
+                                    let first_element = &any_of[0];
+                                    let format = first_element.get("format").unwrap_or(&Value::Null);
+                                    (first_element, format)
+                                }
+                            } else {
+                                // No anyOf, use the field_schema directly
+                                let format = field_schema.get("format").unwrap_or(&Value::Null);
+                                (field_schema, format)
+                            };
 
-                            let data_type_str: &str = match field_schema.get("type") {
+                            let data_type_str: &str = match effective_schema.get("type") {
                                 Some(Value::String(t)) => t.as_str(),
                                 Some(Value::Array(types)) => {
                                     let type_strs: Vec<_> = types.iter()
