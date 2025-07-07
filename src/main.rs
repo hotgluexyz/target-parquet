@@ -387,7 +387,6 @@ fn persist_messages(
                 panic!("Unable to parse: {}\nError: {}", message, e);
             }
         };
-        debug!("Message: {}", message_value);
 
         let message_obj = match message_value.as_object() {
             Some(obj) => obj,
