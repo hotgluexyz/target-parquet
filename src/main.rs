@@ -49,6 +49,16 @@ fn validate_datetime(value: &str) -> bool {
         return true;
     }
 
+    // Try parsing MM/DD/YYYY format first
+    if NaiveDateTime::parse_from_str(&format!("{}T00:00:00", value), "%m/%d/%YT%H:%M:%S").is_ok() {
+        return true;
+    }
+
+    // If MM/DD/YYYY fails, try DD/MM/YYYY format
+    if NaiveDateTime::parse_from_str(&format!("{}T00:00:00", value), "%d/%m/%YT%H:%M:%S").is_ok() {
+        return true;
+    }
+
     false
 }
 
@@ -288,6 +298,10 @@ impl ParquetWriter {
                                 } else if let Ok(dt) = DateTime::parse_from_str(s, "%Y-%m-%dT%H:%M:%S%.f%z") {
                                     Some(dt.timestamp_millis())
                                 } else if let Ok(dt) = NaiveDateTime::parse_from_str(&format!("{}T00:00:00", s), "%Y-%m-%dT%H:%M:%S") {
+                                    Some(dt.and_utc().timestamp_millis())
+                                } else if let Ok(dt) = NaiveDateTime::parse_from_str(&format!("{}T00:00:00", s), "%m/%d/%YT%H:%M:%S") {
+                                    Some(dt.and_utc().timestamp_millis())
+                                } else if let Ok(dt) = NaiveDateTime::parse_from_str(&format!("{}T00:00:00", s), "%d/%m/%YT%H:%M:%S") {
                                     Some(dt.and_utc().timestamp_millis())
                                 } else {
                                     panic!("Invalid timestamp format: {}", s);
