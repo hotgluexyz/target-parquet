@@ -126,17 +126,9 @@ class ParquetSink(BatchSink):
     ) -> None:
         """Initialize target sink."""
         super().__init__(target, stream_name, schema, key_properties)
-        self._validator = ParquetValidator(self.schema, format_checker=None)
 
     def _validate_and_parse(self, record: Dict) -> Dict:
-        try:
-            return super()._validate_and_parse(record)
-        except Exception as e:
-            # NOTE: If the below flag is not on we will silently have typing issues and not report them
-            if self._config.get("strict_validation", False):
-                self.logger.exception(f"Error validating and parsing record.")
-                raise e
-            return record
+        pass
 
     @property
     def datetime_error_treatment(self) -> DatetimeErrorTreatmentEnum:
@@ -167,42 +159,8 @@ class ParquetSink(BatchSink):
 
         context["records"].append(record)
 
-        self.writers.update_job_metrics(self.stream_name)
-
     def process_batch(self, context: dict) -> None:
 
         table = pa.Table.from_pylist(context["records"], schema=context["schema"])
         self.writers.write(self.stream_name, table)
 
-    def _parse_timestamps_in_record(
-        self, record: Dict, schema: Dict, treatment: DatetimeErrorTreatmentEnum
-    ) -> None:
-        """Parse strings to datetime.datetime values, repairing or erroring on failure.
-
-        Attempts to parse every field that is of type date/datetime/time. If its value
-        is out of range, repair logic will be driven by the `treatment` input arg:
-        MAX, NULL, or ERROR.
-
-        Args:
-            record: Individual record in the stream.
-            schema: TODO
-            treatment: TODO
-        """
-        for key in record.keys():
-            datelike_type = get_datelike_property_type(schema["properties"][key])
-            if datelike_type:
-                try:
-                    date_val = record[key]
-                    if record[key] is not None:
-                        date_val = parser.parse(date_val)
-                except Exception as ex:
-                    date_val = handle_invalid_timestamp_in_record(
-                        record,
-                        [key],
-                        date_val,
-                        datelike_type,
-                        ex,
-                        treatment,
-                        logging.getLogger('singer-sdk'),
-                    )
-                record[key] = date_val

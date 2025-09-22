@@ -49,26 +49,3 @@ class Writers(metaclass=SingletonMeta):
 
         writer.write(row)
 
-    def update_job_metrics(self, stream_name: str):
-        job_metrics_path = "job_metrics.json"
-
-        if not os.path.isfile(job_metrics_path):
-            pathlib.Path(job_metrics_path).touch()
-
-        with open(job_metrics_path, "r+") as f:
-            content = dict()
-
-            try:
-                content = json.loads(f.read())
-            except:
-                pass
-
-            if not content.get("recordCount"):
-                content["recordCount"] = dict()
-
-            content["recordCount"][stream_name] = (
-                content["recordCount"].get(stream_name, 0) + 1
-            )
-
-            f.seek(0)
-            f.write(json.dumps(content))
