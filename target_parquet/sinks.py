@@ -9,7 +9,6 @@ from dateutil import parser
 import pyarrow as pa
 import pyarrow.parquet as pq
 from dateutil import parser as datetime_parser
-from jsonschema import FormatChecker
 from singer_sdk.sinks import BatchSink
 
 from target_parquet.validator import ParquetValidator
@@ -25,6 +24,8 @@ _MAX_TIME = "23:59:59.999999"
 
 
 def remove_null_string(array: list):
+    if not isinstance(array, list):
+        return array
     return list(filter(lambda e: e != "null", array))
 
 
@@ -74,16 +75,20 @@ def build_pyarrow_field(key: str, value: dict):
 
 
 def parse_record_value(record_value, property: dict, logger: logging.Logger):
-    if record_value in [None, ""]:
+    if record_value is None:
         return None
 
     if "anyOf" in property:
         property = property["anyOf"][0]
 
     if "type" in property:
-        type_id = remove_null_string(property["type"])[0]
+        types = remove_null_string(property["type"])
+        type_id = types[0] if isinstance(types, list) else types
     else:
         type_id = "string"
+
+    if type_id != "string" and record_value == "":
+        return None
 
     if type_id == "number":
         return float(record_value)
@@ -106,7 +111,7 @@ def parse_record_value(record_value, property: dict, logger: logging.Logger):
     if isinstance(record_value, (list, dict)):
         try:
             return json.dumps(record_value, default=str)
-        except:
+        except Exception:
             return str(record_value)
 
     return record_value
@@ -167,7 +172,7 @@ class ParquetSink(BatchSink):
         except Exception as e:
             # NOTE: If the below flag is not on we will silently have typing issues and not report them
             if self._config.get("strict_validation", False):
-                self.logger.exception(f"Error validating and parsing record.")
+                self.logger.exception("Error validating and parsing record.")
                 raise e
             return record
 
