@@ -52,6 +52,11 @@ def build_pyarrow_field(key: str, value: dict):
     if "anyOf" in value:
         value = value["anyOf"][0]
     types = value.get("type", ["string", "null"])
+    
+    # If the type is "string", we need to add "null" to the types list
+    # because we allow null values for empty strings
+    if isinstance(types, str) and types == "string":
+        types = ["string", "null"]
 
     is_nullable = any(i for i in ("null", "array", "object") if i in types) or value.get("format") == "date-time"
 
@@ -75,7 +80,7 @@ def build_pyarrow_field(key: str, value: dict):
 
 
 def parse_record_value(record_value, property: dict, logger: logging.Logger):
-    if record_value is None:
+    if record_value in [None, ""]:
         return None
 
     if "anyOf" in property:
@@ -86,9 +91,6 @@ def parse_record_value(record_value, property: dict, logger: logging.Logger):
         type_id = types[0] if isinstance(types, list) else types
     else:
         type_id = "string"
-
-    if type_id != "string" and record_value == "":
-        return None
 
     if type_id == "number":
         return float(record_value)
