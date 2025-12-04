@@ -9,7 +9,6 @@ from dateutil import parser
 import pyarrow as pa
 import pyarrow.parquet as pq
 from dateutil import parser as datetime_parser
-from jsonschema import FormatChecker
 from singer_sdk.sinks import BatchSink
 
 from target_parquet.validator import ParquetValidator
@@ -25,6 +24,8 @@ _MAX_TIME = "23:59:59.999999"
 
 
 def remove_null_string(array: list):
+    if not isinstance(array, list):
+        return array
     return list(filter(lambda e: e != "null", array))
 
 
@@ -51,6 +52,11 @@ def build_pyarrow_field(key: str, value: dict):
     if "anyOf" in value:
         value = value["anyOf"][0]
     types = value.get("type", ["string", "null"])
+    
+    # If the type is "string", we need to add "null" to the types list
+    # because we allow null values for empty strings
+    if isinstance(types, str) and types == "string":
+        types = ["string", "null"]
 
     is_nullable = any(i for i in ("null", "array", "object") if i in types) or value.get("format") == "date-time"
 
@@ -81,7 +87,8 @@ def parse_record_value(record_value, property: dict, logger: logging.Logger):
         property = property["anyOf"][0]
 
     if "type" in property:
-        type_id = remove_null_string(property["type"])[0]
+        types = remove_null_string(property["type"])
+        type_id = types[0] if isinstance(types, list) else types
     else:
         type_id = "string"
 
@@ -106,7 +113,7 @@ def parse_record_value(record_value, property: dict, logger: logging.Logger):
     if isinstance(record_value, (list, dict)):
         try:
             return json.dumps(record_value, default=str)
-        except:
+        except Exception:
             return str(record_value)
 
     return record_value
@@ -167,7 +174,7 @@ class ParquetSink(BatchSink):
         except Exception as e:
             # NOTE: If the below flag is not on we will silently have typing issues and not report them
             if self._config.get("strict_validation", False):
-                self.logger.exception(f"Error validating and parsing record.")
+                self.logger.exception("Error validating and parsing record.")
                 raise e
             return record
 
