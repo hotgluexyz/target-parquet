@@ -249,8 +249,9 @@ class ParquetSink(BatchSink):
                 continue
 
             # If there is only one file, rename it to the final file path
-            if len(file_paths) == 1 and file_paths[0] != stream_dict["final_file_path"]:
-                shutil.move(file_paths[0], stream_dict["final_file_path"])
+            if len(file_paths) == 1:
+                if file_paths[0] != stream_dict["final_file_path"]:
+                    shutil.move(file_paths[0], stream_dict["final_file_path"])
                 continue
             
             # initialize writer to None
