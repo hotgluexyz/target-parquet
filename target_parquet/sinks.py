@@ -249,7 +249,7 @@ class ParquetSink(BatchSink):
                 continue
 
             # If there is only one file, rename it to the final file path
-            if len(file_paths) == 1:
+            if len(file_paths) == 1 and file_paths[0] != stream_dict["final_file_path"]:
                 shutil.move(file_paths[0], stream_dict["final_file_path"])
                 continue
             
@@ -265,7 +265,8 @@ class ParquetSink(BatchSink):
                 # "Parquet magic bytes not found in footer. Either the file is corrupted or this is not a parquet file."
                 if final_file_path in file_paths:
                     # rename the final file path to be different
-                    latest_file_path = f"{final_file_path.split('.')[0]}-latest.parquet"
+                    file_name, _ = os.path.splitext(final_file_path)
+                    latest_file_path = f"{file_name}-latest.parquet"
                     shutil.move(final_file_path, latest_file_path)
                     # replace the chunk with the same name as final file path with the renamed file
                     file_paths[file_paths.index(final_file_path)] = latest_file_path
