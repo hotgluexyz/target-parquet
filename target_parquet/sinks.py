@@ -157,6 +157,14 @@ class ParquetSink(BatchSink):
 
     @property
     def max_size(self) -> int:
+        env_value = os.getenv("PARQUET_BATCH_MAX_SIZE")
+        if env_value is not None and env_value != "":
+            try:
+                return int(env_value)
+            except ValueError:
+                self.logger.warning(
+                    f"Invalid PARQUET_BATCH_MAX_SIZE env value '{env_value}'"
+                )
         return self._config.get("BATCH_MAX_SIZE") or 1000
 
     def __init__(
