@@ -17,6 +17,7 @@ Each class covers a distinct edge case:
 
 import json
 
+import pyarrow as pa
 import pytest
 
 from target_parquet.sinks import ParquetSink
@@ -46,6 +47,8 @@ class TestIntegerValuesWithStringSchema:
         table = read_parquet_for_stream(tmp_path, "users")
         assert table.num_rows == 2
         assert table.column("id").to_pylist() == ["100", "200"]
+        assert table.schema.field("id").type == pa.string()
+        assert table.schema.field("name").type == pa.string()
 
 
 class TestFuzzyTypes:
@@ -65,6 +68,7 @@ class TestFuzzyTypes:
         assert table.num_rows == 2
         values = table.column("value").to_pylist()
         assert values == ["text", "42"]
+        assert table.schema.field("value").type == pa.string()
 
     def test_number_string_order_mismatch(self, tmp_path):
         """Known inconsistency: build_pyarrow_field resolves ["number", "string"]
@@ -97,6 +101,8 @@ class TestNonNullColumnsWithNullValues:
         table = read_parquet_for_stream(tmp_path, "items")
         assert table.num_rows == 2
         assert table.column("description").to_pylist() == [None, None]
+        assert table.schema.field("description").type == pa.string()
+        assert table.schema.field("description").nullable
 
     def test_non_nullable_column_with_null_value(self, tmp_path):
         """Null in a non-nullable column causes PyArrow to silently write a corrupt
@@ -220,6 +226,8 @@ class TestMultipleSchemaMessages:
         run_target(messages)
         table = read_parquet_for_stream(tmp_path, "contacts")
         assert table.num_rows == 2
+        assert table.column("id").to_pylist() == ["1", "2"]
+        assert table.column("name").to_pylist() == ["Alice", "Bob"]
 
     def test_schema_with_added_column(self, tmp_path):
         """Second schema adds a column — the SDK flushes the first batch (schema_v1) before
@@ -297,6 +305,8 @@ class TestSchemaWithoutRecords:
         assert not list(tmp_path.glob("no_data-*.parquet"))
         table = read_parquet_for_stream(tmp_path, "has_data")
         assert table.num_rows == 1
+        assert table.column("id")[0].as_py() == "1"
+        assert table.column("value")[0].as_py() == "test"
 
 
 class TestStateMessages:
@@ -311,6 +321,7 @@ class TestStateMessages:
         run_target(messages)
         table = read_parquet_for_stream(tmp_path, "users")
         assert table.num_rows == 1
+        assert table.column("id")[0].as_py() == "1"
 
     def test_state_between_records_does_not_affect_output(self, tmp_path):
         messages = [
@@ -322,6 +333,7 @@ class TestStateMessages:
         run_target(messages)
         table = read_parquet_for_stream(tmp_path, "users")
         assert table.num_rows == 2
+        assert table.column("id").to_pylist() == ["1", "2"]
 
 
 class TestMultipleStreams:
@@ -337,6 +349,12 @@ class TestMultipleStreams:
         run_target(messages)
         assert len(list(tmp_path.glob("users-*.parquet"))) == 1
         assert len(list(tmp_path.glob("orders-*.parquet"))) == 1
+        users_table = read_parquet_for_stream(tmp_path, "users")
+        orders_table = read_parquet_for_stream(tmp_path, "orders")
+        assert users_table.column("id")[0].as_py() == "u1"
+        assert orders_table.column("id")[0].as_py() == "o1"
+        assert orders_table.schema.field("amount").type == pa.float64()
+        assert orders_table.column("amount")[0].as_py() == 99.99
 
     def test_interleaved_records_go_to_correct_streams(self, tmp_path):
         messages = [
@@ -349,8 +367,12 @@ class TestMultipleStreams:
             record_message("orders", {"id": "o3"}),
         ]
         run_target(messages)
-        assert read_parquet_for_stream(tmp_path, "users").num_rows == 2
-        assert read_parquet_for_stream(tmp_path, "orders").num_rows == 3
+        users_table = read_parquet_for_stream(tmp_path, "users")
+        orders_table = read_parquet_for_stream(tmp_path, "orders")
+        assert users_table.num_rows == 2
+        assert orders_table.num_rows == 3
+        assert sorted(users_table.column("id").to_pylist()) == ["u1", "u2"]
+        assert sorted(orders_table.column("id").to_pylist()) == ["o1", "o2", "o3"]
 
 
 class TestRecordFieldMismatch:
@@ -397,3 +419,4 @@ class TestMultiBatch:
         run_target(messages)
         table = read_parquet_for_stream(tmp_path, "data")
         assert table.num_rows == 7
+        assert sorted(table.column("id").to_pylist()) == [str(i) for i in range(7)]

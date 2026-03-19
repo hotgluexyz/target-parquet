@@ -34,6 +34,8 @@ class TestBooleanColumns:
         run_target(messages)
         table = read_parquet_for_stream(tmp_path, "flags")
         assert table.column("active").to_pylist() == [True, False]
+        assert table.schema.field("active").type == pa.bool_()
+        assert table.schema.field("active").nullable
 
     def test_false_is_not_treated_as_none(self, tmp_path):
         """False is falsy but must not be coerced to None by parse_record_value."""
@@ -47,6 +49,7 @@ class TestBooleanColumns:
         run_target(messages)
         table = read_parquet_for_stream(tmp_path, "flags")
         assert table.column("enabled")[0].as_py() is False
+        assert table.schema.field("enabled").type == pa.bool_()
 
     def test_null_boolean_column(self, tmp_path):
         messages = [
@@ -59,6 +62,8 @@ class TestBooleanColumns:
         run_target(messages)
         table = read_parquet_for_stream(tmp_path, "flags")
         assert table.column("active")[0].as_py() is None
+        assert table.schema.field("active").type == pa.bool_()
+        assert table.schema.field("active").nullable
 
 
 class TestIntegerColumns:
@@ -74,6 +79,8 @@ class TestIntegerColumns:
         run_target(messages)
         table = read_parquet_for_stream(tmp_path, "counts")
         assert table.column("count").to_pylist() == [42, -7]
+        assert table.schema.field("count").type == pa.int64()
+        assert table.schema.field("count").nullable
 
     def test_zero_integer_is_not_treated_as_none(self, tmp_path):
         """0 is falsy but must survive the full pipeline as a valid integer."""
@@ -87,6 +94,7 @@ class TestIntegerColumns:
         run_target(messages)
         table = read_parquet_for_stream(tmp_path, "counts")
         assert table.column("count")[0].as_py() == 0
+        assert table.schema.field("count").type == pa.int64()
 
     def test_string_coerced_to_integer(self, tmp_path):
         messages = [
@@ -99,6 +107,7 @@ class TestIntegerColumns:
         run_target(messages)
         table = read_parquet_for_stream(tmp_path, "counts")
         assert table.column("count")[0].as_py() == 99
+        assert table.schema.field("count").type == pa.int64()
 
 
 class TestNumberColumns:
@@ -114,6 +123,8 @@ class TestNumberColumns:
         run_target(messages)
         table = read_parquet_for_stream(tmp_path, "prices")
         assert table.column("price").to_pylist() == [19.99, -0.5]
+        assert table.schema.field("price").type == pa.float64()
+        assert table.schema.field("price").nullable
 
     def test_zero_float_is_not_treated_as_none(self, tmp_path):
         """0.0 is falsy but must survive the full pipeline as a valid float."""
@@ -127,6 +138,7 @@ class TestNumberColumns:
         run_target(messages)
         table = read_parquet_for_stream(tmp_path, "prices")
         assert table.column("price")[0].as_py() == 0.0
+        assert table.schema.field("price").type == pa.float64()
 
 
 class TestDatetimeColumns:
@@ -140,7 +152,9 @@ class TestDatetimeColumns:
         ]
         run_target(messages)
         table = read_parquet_for_stream(tmp_path, "events")
-        assert pa.types.is_timestamp(table.schema.field("created_at").type)
+        ts_field = table.schema.field("created_at")
+        assert ts_field.type == pa.timestamp("ms")
+        assert ts_field.nullable
         ts = table.column("created_at")[0].as_py()
         assert ts is not None
         assert ts.year == 2024 and ts.month == 6 and ts.day == 15
@@ -185,6 +199,7 @@ class TestAnyOfSchemaIntegration:
         table = read_parquet_for_stream(tmp_path, "products")
         assert table.num_rows == 1
         assert table.column("price")[0].as_py() == 9.99
+        assert table.schema.field("price").type == pa.float64()
 
     def test_anyof_null_variant_loses_nullability(self, tmp_path):
         """BUG: build_pyarrow_field only inspects anyOf[0] for the type and discards
@@ -218,6 +233,8 @@ class TestFixedHeadersConfig:
         table = read_parquet_for_stream(tmp_path, "contacts")
         assert set(table.column_names) == {"id", "name"}
         assert "email" not in table.column_names
+        assert table.column("id")[0].as_py() == "1"
+        assert table.column("name")[0].as_py() == "Alice"
 
     def test_stream_not_in_fixed_headers_is_unaffected(self, tmp_path):
         """fixed_headers only applies to streams explicitly listed in the config."""
@@ -232,6 +249,8 @@ class TestFixedHeadersConfig:
         run_target(messages, config=config)
         table = read_parquet_for_stream(tmp_path, "contacts")
         assert set(table.column_names) == {"id", "name"}
+        assert table.column("id")[0].as_py() == "1"
+        assert table.column("name")[0].as_py() == "Alice"
 
 
 class TestStrictValidationConfig:
@@ -251,6 +270,8 @@ class TestStrictValidationConfig:
         run_target(messages, config={"strict_validation": False})
         table = read_parquet_for_stream(tmp_path, "events")
         assert table.num_rows == 1
+        assert table.column("id")[0].as_py() == "1"
+        assert table.column("status")[0].as_py() == "invalid-value"
 
     def test_strict_raises_on_invalid_record(self, tmp_path):
         """With strict_validation=True the schema violation propagates as an exception."""
