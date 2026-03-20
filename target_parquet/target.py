@@ -25,10 +25,8 @@ class TargetParquet(Target):
         th.Property(
             "empty_string_to_null",
             th.BooleanType,
-            description=(
-                "When true, empty string values ('') are written as null. "
-                "Defaults to true."
-            ),
+            default=True,
+            description="When true, empty string values ('') are written as null.",
         ),
     ).to_dict()
     default_sink_class = ParquetSink
