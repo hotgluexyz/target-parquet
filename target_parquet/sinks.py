@@ -109,6 +109,8 @@ def parse_record_value(
         return int(record_value)
 
     if type_id == "string" and property.get("format") == "date-time":
+        if record_value == "":
+            return None
         if isinstance(record_value, datetime.datetime):
             return record_value
         try:
