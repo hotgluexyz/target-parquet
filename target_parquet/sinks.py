@@ -81,8 +81,13 @@ def build_pyarrow_field(key: str, value: dict):
     )
 
 
-def parse_record_value(record_value, property: dict, logger: logging.Logger):
-    if record_value in [None, ""]:
+def parse_record_value(
+    record_value,
+    property: dict,
+    logger: logging.Logger,
+    empty_string_to_null: bool = True,
+):
+    if record_value is None:
         return None
 
     if "anyOf" in property:
@@ -94,6 +99,9 @@ def parse_record_value(record_value, property: dict, logger: logging.Logger):
     else:
         type_id = "string"
 
+    if record_value == "" and (empty_string_to_null or type_id != "string"):
+        return None
+
     if type_id == "number":
         return float(record_value)
 
@@ -101,6 +109,8 @@ def parse_record_value(record_value, property: dict, logger: logging.Logger):
         return int(record_value)
 
     if type_id == "string" and property.get("format") == "date-time":
+        if record_value == "":
+            return None
         if isinstance(record_value, datetime.datetime):
             return record_value
         try:
@@ -203,9 +213,10 @@ class ParquetSink(BatchSink):
 
     def process_record(self, record: dict, context: dict) -> None:
         """Process the record."""
+        empty_string_to_null = self.config.get("empty_string_to_null", True)
 
         for (key, property) in self.schema["properties"].items():
-            record[key] = parse_record_value(record.get(key), property, self.logger)
+            record[key] = parse_record_value(record.get(key), property, self.logger, empty_string_to_null)
 
         context["records"].append(record)
 

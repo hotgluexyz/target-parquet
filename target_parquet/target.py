@@ -22,6 +22,12 @@ class TargetParquet(Target):
             th.StringType,
             description="The scheme with which output files will be named",
         ),
+        th.Property(
+            "empty_string_to_null",
+            th.BooleanType,
+            default=True,
+            description="When true, empty string values ('') are written as null.",
+        ),
     ).to_dict()
     default_sink_class = ParquetSink
 

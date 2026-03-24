@@ -253,6 +253,56 @@ class TestFixedHeadersConfig:
         assert table.column("name")[0].as_py() == "Alice"
 
 
+class TestEmptyStringToNullConfig:
+    """empty_string_to_null config flag controls empty string handling."""
+
+    _PROPS = {
+        "id": {"type": ["string", "null"]},
+        "name": {"type": ["string", "null"]},
+        "count": {"type": ["integer", "null"]},
+    }
+
+    def test_empty_string_becomes_null_when_flag_is_true(self, tmp_path):
+        """With empty_string_to_null=True (default), '' is written as null for all types."""
+        messages = [
+            schema_message("users", self._PROPS, ["id"]),
+            record_message("users", {"id": "1", "name": "", "count": None}),
+        ]
+        run_target(messages, config={"empty_string_to_null": True})
+        table = read_parquet_for_stream(tmp_path, "users")
+        assert table.column("name")[0].as_py() is None
+
+    def test_empty_string_preserved_when_flag_is_false(self, tmp_path):
+        """With empty_string_to_null=False, '' is preserved as '' for string columns."""
+        messages = [
+            schema_message("users", self._PROPS, ["id"]),
+            record_message("users", {"id": "1", "name": "", "count": None}),
+        ]
+        run_target(messages, config={"empty_string_to_null": False})
+        table = read_parquet_for_stream(tmp_path, "users")
+        assert table.column("name")[0].as_py() == ""
+
+    def test_empty_string_on_non_string_still_null_when_flag_is_false(self, tmp_path):
+        """With empty_string_to_null=False, '' on an integer column is still null."""
+        messages = [
+            schema_message("users", self._PROPS, ["id"]),
+            record_message("users", {"id": "1", "name": "Alice", "count": ""}),
+        ]
+        run_target(messages, config={"empty_string_to_null": False})
+        table = read_parquet_for_stream(tmp_path, "users")
+        assert table.column("count")[0].as_py() is None
+
+    def test_empty_string_to_null_defaults_to_true(self, tmp_path):
+        """Without the flag, empty strings are converted to null (backward-compatible default)."""
+        messages = [
+            schema_message("users", self._PROPS, ["id"]),
+            record_message("users", {"id": "1", "name": "", "count": None}),
+        ]
+        run_target(messages)
+        table = read_parquet_for_stream(tmp_path, "users")
+        assert table.column("name")[0].as_py() is None
+
+
 class TestStrictValidationConfig:
     """_validate_and_parse strict_validation flag controls exception propagation."""
 
