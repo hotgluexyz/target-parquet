@@ -42,7 +42,9 @@ class Writers(metaclass=SingletonMeta):
 
         self._writers[stream_name] = pq.ParquetWriter(
             f"{stream_name}-{util.get_date_string()}-{self._batch_count[stream_name]}.parquet",
-            schema
+            schema,
+            compression="zstd",
+            compression_level=3,
         )
 
     def close_one(self, stream_name: str):
