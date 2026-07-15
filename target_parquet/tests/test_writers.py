@@ -24,6 +24,14 @@ class TestStartWriter:
         Writers().start_writer("stream", _SCHEMA)
         assert list(tmp_path.glob("stream-*.parquet")) == first_files
 
+    def test_uses_zstd_compression(self, tmp_path):
+        w = Writers()
+        w.start_writer("stream", _SCHEMA)
+        w.write("stream", _table("a"))
+        w.close_all()
+        metadata = pq.ParquetFile(list(tmp_path.glob("stream-*.parquet"))[0]).metadata
+        assert metadata.row_group(0).column(0).compression == "ZSTD"
+
 
 class TestExistWriter:
     def test_false_before_start(self):
