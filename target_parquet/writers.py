@@ -29,7 +29,10 @@ class Writers(metaclass=SingletonMeta):
             return
 
         self._writers[stream_name] = pq.ParquetWriter(
-            f"{stream_name}-{get_date_string()}.parquet", schema
+            f"{stream_name}-{get_date_string()}.parquet",
+            schema,
+            compression="ZSTD",
+            compression_level=3,
         )
 
     def close_all(self):
