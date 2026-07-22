@@ -289,7 +289,12 @@ class ParquetSink(BatchSink):
                         table = pq.read_table(file_path)
                         # if writer is None, create a new writer with the final file path and the table schema
                         if writer is None:
-                            writer = ParquetWriter(final_file_path, table.schema)
+                            writer = ParquetWriter(
+                                final_file_path,
+                                table.schema,
+                                compression="zstd",
+                                compression_level=3,
+                            )
                         # write the table to the final file
                         writer.write_table(table)
                         # delete the original file
