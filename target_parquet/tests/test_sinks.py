@@ -90,6 +90,12 @@ class TestBuildPyarrowField:
     def test_anyof_uses_first_variant(self):
         field = build_pyarrow_field("val", {"anyOf": [{"type": "number"}, {"type": "null"}]})
         assert field.type == pa.float64()
+        assert field.nullable
+
+    def test_anyof_without_null_variant_is_non_nullable(self):
+        field = build_pyarrow_field("val", {"anyOf": [{"type": "number"}, {"type": "string"}]})
+        assert field.type == pa.float64()
+        assert not field.nullable
 
     def test_fuzzy_string_number(self):
         """Fuzzy types: string takes priority over number."""

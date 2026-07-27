@@ -8,15 +8,15 @@ from typing import Dict
 import pyarrow as pa
 from dateutil import parser as datetime_parser
 from jsonschema import FormatChecker
-from singer_sdk.sinks import BatchSink
-
-from target_parquet.validator import ParquetValidator
-from target_parquet.writers import Writers
-from singer_sdk.helpers._typing import (
+from hotglue_singer_sdk.sinks import BatchSink
+from hotglue_singer_sdk.helpers._typing import (
     DatetimeErrorTreatmentEnum,
     get_datelike_property_type,
     handle_invalid_timestamp_in_record,
 )
+
+from target_parquet.validator import ParquetValidator
+from target_parquet.writers import Writers
 
 def remove_null_string(array: list):
     if not isinstance(array, list):
@@ -43,9 +43,23 @@ def get_pyarrow_type(type_id: str, format=None):
     return pa.string()
 
 
+def _schema_type_includes_null(type_value) -> bool:
+    if type_value == "null":
+        return True
+    return isinstance(type_value, list) and "null" in type_value
+
+
 def build_pyarrow_field(key: str, value: dict):
     if "anyOf" in value:
-        value = value["anyOf"][0]
+        variants = value["anyOf"]
+        has_null_variant = any(_schema_type_includes_null(v.get("type")) for v in variants)
+        value = dict(variants[0])
+        if has_null_variant:
+            types = value.get("type", "string")
+            if isinstance(types, str):
+                types = [types]
+            if "null" not in types:
+                value = {**value, "type": list(types) + ["null"]}
     types = value.get("type", ["string", "null"])
 
     is_nullable = any(i for i in ("null", "array", "object") if i in types) or value.get("format") == "date-time"
@@ -203,6 +217,6 @@ class ParquetSink(BatchSink):
                         datelike_type,
                         ex,
                         treatment,
-                        logging.getLogger('singer-sdk'),
+                        logging.getLogger("hotglue-singer-sdk"),
                     )
                 record[key] = date_val
