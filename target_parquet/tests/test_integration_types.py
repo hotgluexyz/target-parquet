@@ -201,10 +201,8 @@ class TestAnyOfSchemaIntegration:
         assert table.column("price")[0].as_py() == 9.99
         assert table.schema.field("price").type == pa.float64()
 
-    def test_anyof_null_variant_loses_nullability(self, tmp_path):
-        """BUG: build_pyarrow_field only inspects anyOf[0] for the type and discards
-        subsequent null variants, building the field as non-nullable float64.
-        PyArrow then coerces None → 0.0 silently instead of writing null."""
+    def test_anyof_null_variant_preserves_nullability(self, tmp_path):
+        """anyOf with a null variant builds a nullable column and stores None as null."""
         messages = [
             schema_message("products", {
                 "id": {"type": ["string", "null"]},
@@ -214,8 +212,8 @@ class TestAnyOfSchemaIntegration:
         ]
         run_target(messages)
         table = read_parquet_for_stream(tmp_path, "products")
-        assert not table.schema.field("price").nullable
-        assert table.column("price")[0].as_py() == 0.0
+        assert table.schema.field("price").nullable
+        assert table.column("price")[0].as_py() is None
 
 
 class TestFixedHeadersConfig:
