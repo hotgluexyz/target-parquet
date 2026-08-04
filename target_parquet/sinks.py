@@ -251,7 +251,8 @@ class ParquetSink(BatchSink):
 
             parquet_files[stream_name]["file_paths"].append(f)
 
-        for stream_dict in parquet_files.values():
+        writers = Writers()
+        for stream_name, stream_dict in parquet_files.items():
             file_paths = stream_dict["file_paths"]
             if not file_paths:
                 continue
@@ -260,6 +261,8 @@ class ParquetSink(BatchSink):
             if len(file_paths) == 1:
                 if file_paths[0] != stream_dict["final_file_path"]:
                     shutil.move(file_paths[0], stream_dict["final_file_path"])
+                # Chunk name is gone after rename; point checkpoints at the final path.
+                writers._last_files[stream_name] = stream_dict["final_file_path"]
                 continue
             
             # initialize writer to None
@@ -303,6 +306,8 @@ class ParquetSink(BatchSink):
                     files_processed = i + 1000 if i + 1000 < len(file_paths) else len(file_paths)
                     self.logger.info(f"First {files_processed} files processed")
                 self.logger.info(f"All files processed. Final file path: {final_file_path}")
+                # Chunks were deleted after combine; checkpoints must use the combined file.
+                writers._last_files[stream_name] = final_file_path
             except Exception as e:
                 self.logger.error(
                     f"Error combining parquet files: {e}, stopped at file {file_path}"
