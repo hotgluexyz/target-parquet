@@ -1,6 +1,6 @@
 """Parquet target class."""
 
-from typing import Optional, Set
+from typing import Set
 
 from singer_sdk import typing as th
 from singer_sdk.target_base import Target
@@ -28,24 +28,14 @@ class TargetParquet(Target):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self._current_record_stream: Optional[str] = None
-        self._completed_streams: Set[str] = set()
+        # Streams the target has processed (schema/record seen or files written).
+        # Checkpoint write keeps only those without starting_replication_value.
+        self._processed_streams: Set[str] = set()
 
     def _note_record_stream(self, stream_name: str) -> None:
-        """Track sequential stream switches for completed_streams.
-
-        When the active record stream changes from A to B, mark A completed.
-        Parent/child interleaving (A→B→A) clears that mark for A when A resumes,
-        so the executor's history-based inference remains the source of truth for
-        resume; this field is a hint that becomes definitive at endofpipe.
-        """
-        if not stream_name:
-            return
-        if self._current_record_stream and self._current_record_stream != stream_name:
-            self._completed_streams.add(self._current_record_stream)
-        # Stream resumed after another (parent/child): no longer completed.
-        self._completed_streams.discard(stream_name)
-        self._current_record_stream = stream_name
+        """Track streams the target has processed for completed_streams."""
+        if stream_name:
+            self._processed_streams.add(stream_name)
 
     def _process_schema_message(self, message_dict: dict) -> None:
         stream_name = message_dict.get("stream")
@@ -66,7 +56,7 @@ class TargetParquet(Target):
         append_checkpoint(
             self._latest_state,
             Writers()._last_files,
-            completed_streams=sorted(self._completed_streams),
+            completed_streams=sorted(self._processed_streams),
         )
 
     def _write_state_message(self, state: dict) -> None:
@@ -77,20 +67,22 @@ class TargetParquet(Target):
         append_checkpoint(
             state,
             Writers()._last_files,
-            completed_streams=sorted(self._completed_streams),
+            completed_streams=sorted(self._processed_streams),
         )
 
     def _process_endofpipe(self) -> None:
         super()._process_endofpipe()
         writers = Writers()
         writers.close_all()
-        # Entire sync finished: every stream that wrote files is complete.
-        self._completed_streams.update(writers._last_files.keys())
+        # Include every stream that wrote files; still exclude any whose bookmark
+        # retains starting_replication_value (stream did not finish).
+        self._processed_streams.update(writers._last_files.keys())
         if self._latest_state:
             append_checkpoint(
                 self._latest_state,
                 writers._last_files,
-                completed_streams=sorted(self._completed_streams),
+                completed_streams=sorted(self._processed_streams),
+                all_data_processed=True,
             )
 
 

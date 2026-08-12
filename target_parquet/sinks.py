@@ -165,7 +165,7 @@ class ParquetSink(BatchSink):
                 self.logger.warning(
                     f"Invalid PARQUET_BATCH_MAX_SIZE env value '{env_value}'"
                 )
-        return self._config.get("BATCH_MAX_SIZE") or 1000
+        return self._config.get("BATCH_MAX_SIZE") or 10
 
     def __init__(
         self,
