@@ -18,6 +18,10 @@ import json
 import os
 from typing import Any, Dict, List, Optional, Sequence
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 CHECKPOINTS_PATH = "checkpoints.json"
 
 
@@ -75,6 +79,7 @@ def finished_completed_streams(
 
 
 def _write_checkpoints(checkpoints: List[dict], path: str = CHECKPOINTS_PATH) -> None:
+    logger.info(f"Writing checkpoints to {path}")
     # Atomic replace so a crash mid-write does not leave a corrupt JSON file.
     tmp_path = f"{path}.tmp"
     with open(tmp_path, "w") as f:
