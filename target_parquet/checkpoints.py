@@ -11,6 +11,8 @@ while a stream is in progress; Singer removes it when the stream finishes.
 
 all_data_processed is True only on the end-of-pipe checkpoint (all input
 consumed, writers closed, final combine/rename done).
+
+seq is a 0-based sequential number assigned when the entry is appended.
 """
 
 import copy
@@ -96,7 +98,7 @@ def append_checkpoint(
     all_data_processed: bool = False,
     path: str = CHECKPOINTS_PATH,
 ) -> None:
-    """Append {state, last_files, completed_streams} for the latest closed parquet file(s).
+    """Append {seq, state, last_files, completed_streams} for the latest closed parquet file(s).
 
     When all_data_processed is True (end-of-pipe), the flag is set on the entry.
     If the latest checkpoint already matches state/files/streams, that entry is
@@ -122,7 +124,14 @@ def append_checkpoint(
                 _write_checkpoints(checkpoints, path)
             return
 
+    latest_seq = checkpoints[-1].get("seq") if checkpoints else None
+    if isinstance(latest_seq, int):
+        seq = latest_seq + 1
+    else:
+        seq = len(checkpoints)
+
     entry = {
+        "seq": seq,
         "state": copy.deepcopy(state),
         "last_files": entry_files,
         "completed_streams": entry_completed,
