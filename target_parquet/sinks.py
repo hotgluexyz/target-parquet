@@ -8,11 +8,11 @@ from typing import Dict
 import pyarrow as pa
 from dateutil import parser as datetime_parser
 from jsonschema import FormatChecker
-from singer_sdk.sinks import BatchSink
+from hotglue_singer_sdk.sinks import BatchSink
 
 from target_parquet.validator import ParquetValidator
 from target_parquet.writers import Writers
-from singer_sdk.helpers._typing import (
+from hotglue_singer_sdk.helpers._typing import (
     DatetimeErrorTreatmentEnum,
     get_datelike_property_type,
     handle_invalid_timestamp_in_record,
