@@ -22,6 +22,8 @@ class Writers(metaclass=SingletonMeta):
     _writers: dict = {}
     _schemas: dict = {}
     _batch_count: dict = {}
+    # stream_name -> most recently opened/closed chunk path; used by checkpoints.
+    _last_files: dict = {}
 
     def start_schema(self, stream_name: str, schema: pa.Schema):
         if self.exist_schema(stream_name):
@@ -40,12 +42,17 @@ class Writers(metaclass=SingletonMeta):
 
         self._batch_count[stream_name] += 1
 
+        filename = (
+            f"{stream_name}-{util.get_date_string()}-{self._batch_count[stream_name]}.parquet"
+        )
         self._writers[stream_name] = pq.ParquetWriter(
-            f"{stream_name}-{util.get_date_string()}-{self._batch_count[stream_name]}.parquet",
+            filename,
             schema,
             compression="zstd",
             compression_level=3,
         )
+        # Track before/while writing so STATE checkpoints can name this chunk.
+        self._last_files[stream_name] = filename
 
     def close_one(self, stream_name: str):
         if not self.exist_writer(stream_name):
