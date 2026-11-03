@@ -11,7 +11,7 @@ from jsonschema import FormatChecker
 from singer_sdk.sinks import BatchSink
 
 from target_parquet.validator import ParquetValidator
-from target_parquet.writers import Writers
+from target_parquet.writers import Writers, log_milestone
 from singer_sdk.helpers._typing import (
     DatetimeErrorTreatmentEnum,
     get_datelike_property_type,
@@ -127,6 +127,11 @@ class ParquetSink(BatchSink):
         """Initialize target sink."""
         super().__init__(target, stream_name, schema, key_properties)
         self._validator = ParquetValidator(self.schema, format_checker=None)
+        self._logged_first_record = False
+        log_milestone(
+            f"Finished initializing sink for stream '{stream_name}'",
+            self.logger,
+        )
 
     def _validate_and_parse(self, record: Dict) -> Dict:
         try:
@@ -156,11 +161,22 @@ class ParquetSink(BatchSink):
         context["schema"] = schema
         context["records"] = []
 
+        log_milestone(
+            f"Starting batch for stream '{self.stream_name}' (opening parquet writer)",
+            self.logger,
+        )
         self.writers = Writers()
         self.writers.start_writer(self.stream_name, schema)
 
     def process_record(self, record: dict, context: dict) -> None:
         """Process the record."""
+
+        if not self._logged_first_record:
+            self._logged_first_record = True
+            log_milestone(
+                f"Processing first record for stream '{self.stream_name}'",
+                self.logger,
+            )
 
         for (key, property) in self.schema["properties"].items():
             record[key] = parse_record_value(record.get(key), key, property)

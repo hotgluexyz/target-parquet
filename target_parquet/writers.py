@@ -1,14 +1,33 @@
 import datetime
 import json
+import logging
 import os
 import pathlib
+import sys
 
 import pyarrow as pa
 import pyarrow.parquet as pq
 
+LOGGER = logging.getLogger("target-parquet")
+
 
 def get_date_string() -> str:
     return datetime.datetime.now().isoformat()[0:19].replace("-", "").replace(":", "")
+
+
+def log_milestone(message: str, logger=None) -> None:
+    """Log an INFO milestone and flush so the executor sees it promptly."""
+    log = logger or LOGGER
+    log.info(message)
+    for handler in (*log.handlers, *logging.root.handlers):
+        try:
+            handler.flush()
+        except Exception:
+            pass
+    try:
+        sys.stderr.flush()
+    except Exception:
+        pass
 
 
 class SingletonMeta(type):
@@ -28,18 +47,24 @@ class Writers(metaclass=SingletonMeta):
         if self.exist_writer(stream_name):
             return
 
+        path = f"{stream_name}-{get_date_string()}.parquet"
         self._writers[stream_name] = pq.ParquetWriter(
-            f"{stream_name}-{get_date_string()}.parquet",
+            path,
             schema,
             compression="ZSTD",
             compression_level=3,
         )
+        log_milestone(f"Opened parquet writer for stream '{stream_name}': {path}")
 
     def close_all(self):
-        for value in self._writers.values():
-            value.close()
-
-        self._writers = {}
+        writers = list(self._writers.values())
+        self._writers.clear()
+        for value in writers:
+            try:
+                if value.is_open:
+                    value.close()
+            except Exception:
+                pass
 
     def exist_writer(self, stream_name: str):
         return self._writers.get(stream_name) is not None
