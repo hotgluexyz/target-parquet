@@ -20,8 +20,14 @@ def log_milestone(message: str, logger=None) -> None:
     log = logger or LOGGER
     log.info(message)
     for handler in (*log.handlers, *logging.root.handlers):
-        handler.flush()
-    sys.stderr.flush()
+        try:
+            handler.flush()
+        except Exception:
+            pass
+    try:
+        sys.stderr.flush()
+    except Exception:
+        pass
 
 
 class SingletonMeta(type):
