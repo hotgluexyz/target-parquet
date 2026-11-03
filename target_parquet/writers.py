@@ -57,10 +57,14 @@ class Writers(metaclass=SingletonMeta):
         log_milestone(f"Opened parquet writer for stream '{stream_name}': {path}")
 
     def close_all(self):
-        for value in self._writers.values():
-            value.close()
-
-        self._writers = {}
+        writers = list(self._writers.values())
+        self._writers.clear()
+        for value in writers:
+            try:
+                if value.is_open:
+                    value.close()
+            except Exception:
+                pass
 
     def exist_writer(self, stream_name: str):
         return self._writers.get(stream_name) is not None
