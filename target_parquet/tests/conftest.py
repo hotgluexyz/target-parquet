@@ -8,35 +8,20 @@ from target_parquet.target import TargetParquet
 from target_parquet.writers import SingletonMeta, Writers
 
 
-def _reset_writers():
-    """Close every ParquetWriter and drop the Writers singleton."""
-    instance = SingletonMeta._instances.get(Writers)
-    if instance is not None:
-        try:
-            instance.close_all()
-        except Exception:
-            pass
-    for writer in list(Writers._writers.values()):
-        try:
-            writer.close()
-        except Exception:
-            pass
-    Writers._writers.clear()
-    SingletonMeta._instances.pop(Writers, None)
-
-
 @pytest.fixture(autouse=True)
 def isolate_test(tmp_path, monkeypatch):
     """Run each test in an isolated temp directory with a fresh Writers singleton."""
-    _reset_writers()
+    SingletonMeta._instances.pop(Writers, None)
+    Writers._writers = {}
     monkeypatch.chdir(tmp_path)
     yield
-    _reset_writers()
-
-
-def pytest_sessionfinish(session, exitstatus):
-    """Ensure native ParquetWriter handles are closed before interpreter shutdown."""
-    _reset_writers()
+    if Writers in SingletonMeta._instances:
+        try:
+            SingletonMeta._instances[Writers].close_all()
+        except Exception:
+            pass
+        SingletonMeta._instances.pop(Writers, None)
+    Writers._writers = {}
 
 
 def schema_message(stream, properties, key_properties=None):
