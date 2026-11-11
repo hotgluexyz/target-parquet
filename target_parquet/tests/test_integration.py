@@ -105,9 +105,7 @@ class TestNonNullColumnsWithNullValues:
         assert table.schema.field("description").nullable
 
     def test_non_nullable_column_with_null_value(self, tmp_path):
-        """Null in a non-nullable column causes PyArrow to silently write a corrupt
-        parquet file. The target exits with no error, but the file cannot be read back.
-        PyArrow gives no warning at write time; the failure only surfaces on read."""
+        """Null in a non-nullable column is written as the zero value of its type."""
         messages = [
             schema_message("strict", {
                 "id": {"type": "string"},
@@ -115,9 +113,10 @@ class TestNonNullColumnsWithNullValues:
             }, ["id"]),
             record_message("strict", {"id": "1", "required_col": None}),
         ]
-        run_target(messages)  # exits 0, no exception
-        with pytest.raises(OSError, match="Unexpected end of stream"):
-            read_parquet_for_stream(tmp_path, "strict")
+        run_target(messages)
+        table = read_parquet_for_stream(tmp_path, "strict")
+        assert not table.schema.field("required_col").nullable
+        assert table.column("required_col")[0].as_py() == ""
 
 
 class TestArraysOfPrimitives:
