@@ -2,8 +2,8 @@
 
 from typing import Callable
 
-from singer_sdk import typing as th
-from singer_sdk.target_base import Target
+from hotglue_singer_sdk import typing as th
+from hotglue_singer_sdk.target_base import Target
 
 from target_parquet.sinks import ParquetSink
 from target_parquet.writers import Writers
