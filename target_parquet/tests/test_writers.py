@@ -75,6 +75,13 @@ class TestCloseAll:
         w.close_all()
         assert not w.exist_writer("stream")
 
+    def test_clears_class_level_writers_dict(self):
+        w = Writers()
+        w.start_writer("stream", _SCHEMA)
+        w.close_all()
+        assert Writers._writers == {}
+        assert w._writers is Writers._writers
+
     def test_file_readable_after_close(self, tmp_path):
         w = Writers()
         w.start_writer("stream", _SCHEMA)

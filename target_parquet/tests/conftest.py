@@ -1,3 +1,4 @@
+import gc
 import json
 from io import StringIO
 
@@ -8,20 +9,27 @@ from target_parquet.target import TargetParquet
 from target_parquet.writers import SingletonMeta, Writers
 
 
+def _reset_writers():
+    """Close every ParquetWriter and drop the Writers singleton."""
+    instance = SingletonMeta._instances.pop(Writers, None)
+    if instance is not None:
+        instance.close_all()
+    for writer in list(Writers._writers.values()):
+        if writer.is_open:
+            writer.close()
+    Writers._writers.clear()
+
+
 @pytest.fixture(autouse=True)
 def isolate_test(tmp_path, monkeypatch):
     """Run each test in an isolated temp directory with a fresh Writers singleton."""
-    SingletonMeta._instances.pop(Writers, None)
-    Writers._writers = {}
+    _reset_writers()
     monkeypatch.chdir(tmp_path)
     yield
-    if Writers in SingletonMeta._instances:
-        try:
-            SingletonMeta._instances[Writers].close_all()
-        except Exception:
-            pass
-        SingletonMeta._instances.pop(Writers, None)
-    Writers._writers = {}
+    _reset_writers()
+    # Destroy closed ParquetWriter objects while libarrow is still healthy.
+    # Leaving them for interpreter shutdown can SIGSEGV on Linux CI (exit 139).
+    gc.collect()
 
 
 def schema_message(stream, properties, key_properties=None):
