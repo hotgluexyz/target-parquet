@@ -4,7 +4,7 @@ import datetime
 
 from typing import Dict, Any
 
-from singer_sdk.testing import get_standard_target_tests
+from hotglue_singer_sdk.testing import get_standard_target_tests
 
 from target_parquet.target import TargetParquet
 

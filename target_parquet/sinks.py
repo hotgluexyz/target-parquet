@@ -11,12 +11,12 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 from pyarrow.parquet import ParquetWriter
 from dateutil import parser as datetime_parser
-from singer_sdk.sinks import BatchSink
+from hotglue_singer_sdk.sinks import BatchSink
 
 from target_parquet.validator import ParquetValidator
 from target_parquet.writers import Writers
 from target_parquet import util
-from singer_sdk.helpers._typing import (
+from hotglue_singer_sdk.helpers._typing import (
     DatetimeErrorTreatmentEnum,
     get_datelike_property_type,
 )
