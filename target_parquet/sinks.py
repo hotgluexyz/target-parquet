@@ -50,6 +50,14 @@ def get_pyarrow_type(type_id: str, format=None):
     return pa.string()
 
 
+ZERO_VALUES = {
+    pa.float64(): 0.0,
+    pa.int64(): 0,
+    pa.bool_(): False,
+    pa.string(): "",
+}
+
+
 def build_pyarrow_field(key: str, value: dict):
     if "anyOf" in value:
         value = value["anyOf"][0]
@@ -205,6 +213,9 @@ class ParquetSink(BatchSink):
         )
         context["schema"] = schema
         context["records"] = []
+        context["zero_values"] = {
+            field.name: ZERO_VALUES[field.type] for field in schema if not field.nullable
+        }
 
         self.writers = Writers()
         self.writers.start_schema(self.stream_name, schema)
@@ -214,6 +225,10 @@ class ParquetSink(BatchSink):
 
         for (key, property) in self.schema["properties"].items():
             record[key] = parse_record_value(record.get(key), property, self.logger)
+
+        for key, zero_value in context["zero_values"].items():
+            if record[key] is None:
+                record[key] = zero_value
 
         context["records"].append(record)
 
