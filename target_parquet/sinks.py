@@ -11,12 +11,12 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 from pyarrow.parquet import ParquetWriter
 from dateutil import parser as datetime_parser
-from singer_sdk.sinks import BatchSink
+from hotglue_singer_sdk.sinks import BatchSink
 
 from target_parquet.validator import ParquetValidator
 from target_parquet.writers import Writers
 from target_parquet import util
-from singer_sdk.helpers._typing import (
+from hotglue_singer_sdk.helpers._typing import (
     DatetimeErrorTreatmentEnum,
     get_datelike_property_type,
 )
@@ -48,6 +48,14 @@ def get_pyarrow_type(type_id: str, format=None):
         return pa.timestamp("ms")
 
     return pa.string()
+
+
+ZERO_VALUES = {
+    pa.float64(): 0.0,
+    pa.int64(): 0,
+    pa.bool_(): False,
+    pa.string(): "",
+}
 
 
 def build_pyarrow_field(key: str, value: dict):
@@ -205,6 +213,9 @@ class ParquetSink(BatchSink):
         )
         context["schema"] = schema
         context["records"] = []
+        context["zero_values"] = {
+            field.name: ZERO_VALUES[field.type] for field in schema if not field.nullable
+        }
 
         self.writers = Writers()
         self.writers.start_schema(self.stream_name, schema)
@@ -214,6 +225,10 @@ class ParquetSink(BatchSink):
 
         for (key, property) in self.schema["properties"].items():
             record[key] = parse_record_value(record.get(key), property, self.logger)
+
+        for key, zero_value in context["zero_values"].items():
+            if record[key] is None:
+                record[key] = zero_value
 
         context["records"].append(record)
 
