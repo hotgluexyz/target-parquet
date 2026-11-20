@@ -3,6 +3,8 @@
 import json
 import logging
 
+import pytest
+
 from target_parquet.batch_limits import (
     DEFAULT_BATCH_MAX_BYTES,
     DEFAULT_BATCH_MAX_SIZE,
@@ -12,6 +14,13 @@ from target_parquet.batch_limits import (
 )
 from target_parquet.sinks import ParquetSink
 from target_parquet.target import TargetParquet
+
+
+@pytest.fixture(autouse=True)
+def clear_batch_limit_env(monkeypatch):
+    """Keep unit tests independent of shell PARQUET_BATCH_* overrides."""
+    monkeypatch.delenv("PARQUET_BATCH_MAX_SIZE", raising=False)
+    monkeypatch.delenv("PARQUET_BATCH_MAX_BYTES", raising=False)
 
 
 def test_row_payload_bytes_matches_compact_json():
@@ -38,6 +47,16 @@ def test_invalid_env_falls_back_to_config(monkeypatch):
     logger = logging.getLogger("test")
     monkeypatch.setenv("PARQUET_BATCH_MAX_SIZE", "not-a-number")
     assert resolve_batch_max_size({"BATCH_MAX_SIZE": 250}, logger) == 250
+
+
+def test_negative_byte_limit_falls_back_to_default():
+    logger = logging.getLogger("test")
+    assert resolve_batch_max_bytes({"BATCH_MAX_BYTES": -1}, logger) == DEFAULT_BATCH_MAX_BYTES
+
+
+def test_row_payload_bytes_handles_large_integer():
+    row = {"id": "1", "large_id": 2**80}
+    assert row_payload_bytes(row) > 0
 
 
 class TestParquetSinkIsFull:
