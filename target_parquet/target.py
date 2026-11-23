@@ -22,6 +22,16 @@ class TargetParquet(Target):
             th.StringType,
             description="The scheme with which output files will be named",
         ),
+        th.Property(
+            "BATCH_MAX_SIZE",
+            th.IntegerType,
+            description="Maximum records per in-memory batch before draining (default 10000)",
+        ),
+        th.Property(
+            "BATCH_MAX_BYTES",
+            th.IntegerType,
+            description="Maximum estimated row payload bytes per batch before draining (default 64MiB; 0=disabled)",
+        ),
     ).to_dict()
     default_sink_class = ParquetSink
 

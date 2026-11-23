@@ -10,6 +10,11 @@ from dateutil import parser as datetime_parser
 from jsonschema import FormatChecker
 from hotglue_singer_sdk.sinks import BatchSink
 
+from target_parquet.batch_limits import (
+    row_payload_bytes,
+    resolve_batch_max_bytes,
+    resolve_batch_max_size,
+)
 from target_parquet.validator import ParquetValidator
 from target_parquet.writers import Writers, log_milestone
 from hotglue_singer_sdk.helpers._typing import (
@@ -123,8 +128,6 @@ def parse_record_value(record_value, key: str, property: dict):
 class ParquetSink(BatchSink):
     """Parquet target sink class."""
 
-    max_size = 10000
-
     def __init__(
         self,
         target,
@@ -140,6 +143,27 @@ class ParquetSink(BatchSink):
             f"Finished initializing sink for stream '{stream_name}'",
             self.logger,
         )
+
+    @property
+    def max_size(self) -> int:
+        return resolve_batch_max_size(self._config, self.logger)
+
+    @property
+    def max_batch_bytes(self) -> int:
+        return resolve_batch_max_bytes(self._config, self.logger)
+
+    @property
+    def is_full(self) -> bool:
+        """True when the in-memory batch hits the record and/or byte limits."""
+        if self.current_size >= self.max_size:
+            return True
+        byte_limit = self.max_batch_bytes
+        if byte_limit <= 0 or self.current_size <= 0:
+            return False
+        context = self._pending_batch
+        if not context:
+            return False
+        return context.get("batch_bytes", 0) >= byte_limit
 
     def _validate_and_parse(self, record: Dict) -> Dict:
         try:
@@ -168,6 +192,7 @@ class ParquetSink(BatchSink):
         )
         context["schema"] = schema
         context["records"] = []
+        context["batch_bytes"] = 0
         context["zero_values"] = {
             field.name: ZERO_VALUES[field.type] for field in schema if not field.nullable
         }
@@ -197,6 +222,7 @@ class ParquetSink(BatchSink):
                 record[key] = zero_value
 
         context["records"].append(record)
+        context["batch_bytes"] += row_payload_bytes(record)
 
         self.writers.update_job_metrics(self.stream_name)
 
